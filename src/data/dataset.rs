@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::fmt;
+use std::fmt::Formatter;
 use std::string::ToString;
 use anyhow::anyhow;
 use hdf5::{File, H5Type};
@@ -46,7 +48,7 @@ impl<DataType: H5Type> AnnDataset<DataType> {
 
         let groups = hdf5_dataset.groups()?;
         groups.iter().try_for_each(|group| {
-            if group.name() == ROOT { return anyhow::Ok(()) }
+            if group.name() == ROOT { return anyhow::Ok(()); }
             let name = group.name();
             let name = name.strip_prefix(ROOT).unwrap();
 
@@ -119,6 +121,29 @@ impl<DataType: H5Type> AnnDataset<DataType> {
         })?;
         file.close()?;
         Ok(())
+    }
+}
+
+impl<DataType> fmt::Display for AnnDataset<DataType> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let mut dense_labels: Vec<String> = vec![];
+        let mut sparse_labels: Vec<String> = vec![];
+        self.vector_sets.iter().for_each(|entry| {
+            match entry.1 {
+                VectorSet::Dense(set) => {
+                    dense_labels.push(format!("  - {} (dense) with shape {:?}",
+                                              entry.0.to_string(), set.shape()));
+                }
+                VectorSet::Sparse(set) => {
+                    sparse_labels.push(format!("  - {} (sparse) with shape [{}, {}]",
+                                               entry.0.to_string(), set.rows(), set.cols()));
+                }
+            }
+        });
+
+        write!(f, "There are a total of {} datasets: \n{}\n{}",
+               self.vector_sets.len(), dense_labels.join("\n"),
+               sparse_labels.join("\n"))
     }
 }
 
