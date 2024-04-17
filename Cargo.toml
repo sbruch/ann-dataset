@@ -8,6 +8,12 @@ description = "A convenient HDF5 wrapper for working with Approximate Nearest Ne
 readme = "README.md"
 repository = "https://github.com/sbruch/ann-dataset"
 
+include = [
+    "**/*.rs",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+]
 
 [lib]
 name = "ann_dataset"
