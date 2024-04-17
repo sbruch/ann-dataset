@@ -3,8 +3,15 @@ name = "ann_dataset"
 version = "0.1.0"
 edition = "2021"
 
+license = "MIT"
+description = "A convenient HDF5 wrapper for working with Approximate Nearest Neighbor search datasets"
+readme = "README.md"
+repository = "https://github.com/sbruch/ann-dataset"
+
+
 [lib]
 name = "ann_dataset"
+crate-type = ["lib"]
 
 [dependencies]
 ndarray = { version = "0.15.6", features = ["serde"] }

@@ -23,7 +23,7 @@ dataset.write("dataset.hdf5");
 
 ## Reading an ANN dataset
 ```rust
-let dataset = AnnDataset::<f32>::load("dataset.hdf5") ?;
+let dataset = AnnDataset::<f32>::load("dataset.hdf5")?;
 println!("{}", dataset);
 
 let dense_set = dataset.read("dense_set")?;
