@@ -9,3 +9,5 @@ pub enum VectorSet<DataType> {
     /// Sparse vector sets are stored as a `sprs::CsMat` object.
     Sparse(CsMat<DataType>),
 }
+
+pub(crate) type GroundTruth = Array2<usize>;

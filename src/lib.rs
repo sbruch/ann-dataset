@@ -16,8 +16,8 @@
 //! let sparse_set: sprs::CsMat<_ > = sparse_set.to_csr();
 //!
 //! let mut dataset = AnnDataset::<f32>::new();
-//! dataset.add("dense", VectorSet::Dense(dense_set)).unwrap();
-//! dataset.add("sparse", VectorSet::Sparse(sparse_set.clone())).unwrap();
+//! dataset.add_points("dense", VectorSet::Dense(dense_set)).unwrap();
+//! dataset.add_points("sparse", VectorSet::Sparse(sparse_set.clone())).unwrap();
 //!
 //! dataset.write("dataset.hdf5").expect("failed to serialize dataset");
 //! ```
@@ -29,8 +29,8 @@
 //! let dataset = AnnDataset::<f32>::load("dataset.hdf5").expect("failed to load dataset");
 //! println!("{}", dataset);
 //!
-//! let dense_set = dataset.read("dense_set").expect("failed to read vector set");
-//! let sparse_set = dataset.read("sparse_set").expect("failed to read vector set");
+//! let dense_set = dataset.read_points("dense_set").expect("failed to read vector set");
+//! let sparse_set = dataset.read_points("sparse_set").expect("failed to read vector set");
 //! ```
 
 pub(crate) mod data;
