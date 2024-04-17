@@ -1,0 +1,14 @@
+[package]
+name = "ann_dataset"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "ann_dataset"
+
+[dependencies]
+ndarray = { version = "0.15.6", features = ["serde"] }
+sprs = { version = "0.11.1", features = ["serde"] }
+hdf5 = "0.8.1"
+anyhow = "1.0.82"
+tempdir = "0.3.7"
