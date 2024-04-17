@@ -1,5 +1,5 @@
 use clap::Parser;
-use ann_dataset::data::dataset::AnnDataset;
+use ann_dataset::AnnDataset;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]

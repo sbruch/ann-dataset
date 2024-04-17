@@ -14,6 +14,7 @@ const DATA: &str = "data";
 const SHAPE: &str = "shape";
 const ROOT: &str = "/";
 
+/// Encapsulates an ANN dataset.
 pub struct AnnDataset<DataType> {
     vector_sets: HashMap<String, VectorSet<DataType>>,
 }
@@ -26,7 +27,7 @@ impl<DataType: H5Type> AnnDataset<DataType> {
         }
     }
 
-    /// Reads an `AnnDataset` from the given hdf5 file.
+    /// Loads an `AnnDataset` from the given hdf5 file.
     pub fn load(path: &str) -> anyhow::Result<AnnDataset<DataType>> {
         let hdf5_dataset = File::open(path)?;
 

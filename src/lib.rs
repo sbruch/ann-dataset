@@ -4,7 +4,9 @@
 //!
 //! ## Creating an ANN dataset
 //!
-//! ```rust
+//! ```no_run
+//! use ann_dataset::{VectorSet, AnnDataset};
+//!
 //! let dense_set = ndarray::Array2::<f32>::eye(5);
 //!
 //! let mut sparse_set = sprs::TriMat::new((4, 4));
@@ -14,19 +16,24 @@
 //! let sparse_set: sprs::CsMat<_ > = sparse_set.to_csr();
 //!
 //! let mut dataset = AnnDataset::<f32>::new();
-//! dataset.add("dense", VectorSet::Dense(dense_set))?;
-//! dataset.add("sparse", VectorSet::Sparse(sparse_set.clone()))?;
+//! dataset.add("dense", VectorSet::Dense(dense_set)).unwrap();
+//! dataset.add("sparse", VectorSet::Sparse(sparse_set.clone())).unwrap();
 //!
-//! dataset.write("dataset.hdf5");
+//! dataset.write("dataset.hdf5").expect("failed to serialize dataset");
 //! ```
 //!
 //! ## Reading an ANN dataset
-//! ```rust
-//! let dataset = AnnDataset::<f32>::load("dataset.hdf5")?;
+//! ```no_run
+//! use ann_dataset::{VectorSet, AnnDataset};
+//!
+//! let dataset = AnnDataset::<f32>::load("dataset.hdf5").expect("failed to load dataset");
 //! println!("{}", dataset);
 //!
-//! let dense_set = dataset.read("dense_set")?;
-//! let sparse_set = dataset.read("sparse_set")?;
+//! let dense_set = dataset.read("dense_set").expect("failed to read vector set");
+//! let sparse_set = dataset.read("sparse_set").expect("failed to read vector set");
 //! ```
 
-pub mod data;
+pub(crate) mod data;
+
+pub use crate::data::types::VectorSet;
+pub use crate::data::dataset::AnnDataset;
