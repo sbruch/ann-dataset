@@ -40,6 +40,27 @@ impl<DataType: Clone> PointSet<DataType> {
         0_usize
     }
 
+    /// Returns the number of dense dimensions.
+    pub fn num_dense_dimensions(&self) -> usize {
+        if let Some(dense) = self.dense.as_ref() {
+            return dense.ncols();
+        }
+        0_usize
+    }
+
+    /// Returns the number of sparse dimensions.
+    pub fn num_sparse_dimensions(&self) -> usize {
+        if let Some(sparse) = self.sparse.as_ref() {
+            return sparse.cols()
+        }
+        0_usize
+    }
+
+    /// Returns the total number of dimensions.
+    pub fn num_dimensions(&self) -> usize {
+        self.num_sparse_dimensions() + self.num_dense_dimensions()
+    }
+
     /// Returns the dense sub-vectors.
     pub fn get_dense(&self) -> Option<&Array2<DataType>> { self.dense.as_ref() }
 
