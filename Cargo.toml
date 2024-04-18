@@ -11,6 +11,7 @@ keywords = ["ann-search", "nearest-neighbor", "sparse-dense", "vector-sets"]
 include = [
     "**/*.rs",
     "Cargo.toml",
+    "README.md",
     "LICENSE",
 ]
 
