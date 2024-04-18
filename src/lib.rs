@@ -42,3 +42,4 @@ pub use crate::data::dataset::AnnDataset;
 pub use crate::types::Metric;
 pub use crate::types::point_set::PointSet;
 pub use crate::types::query_set::QuerySet;
+pub use crate::types::ground_truth::GroundTruth;
