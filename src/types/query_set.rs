@@ -6,6 +6,7 @@ use crate::types::Metric;
 
 /// A set of query points (dense, sparse, or both) and their exact nearest neighbors for various
 /// metrics.
+#[derive(Eq, PartialEq)]
 pub struct QuerySet<DataType: Clone> {
     points: PointSet<DataType>,
     neighbors: HashMap<Metric, GroundTruth>,

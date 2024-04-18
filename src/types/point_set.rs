@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 
 /// A set of points (dense, sparse, or both) represented as a matrix,
 /// where each row corresponds to a single vector.
+#[derive(Eq, PartialEq)]
 pub struct PointSet<DataType: Clone> {
     dense: Option<Array2<DataType>>,
     sparse: Option<CsMat<DataType>>,
