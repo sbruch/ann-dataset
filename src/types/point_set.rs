@@ -28,6 +28,17 @@ impl<DataType: Clone> PointSet<DataType> {
         Ok(PointSet { dense, sparse })
     }
 
+    /// Returns the number of points in the point set.
+    pub fn num_points(&self) -> usize {
+        if let Some(dense) = self.dense.as_ref() {
+            return dense.nrows();
+        }
+        if let Some(sparse) = self.sparse.as_ref() {
+            return sparse.rows();
+        }
+        0_usize
+    }
+
     /// Returns the dense sub-vectors.
     pub fn get_dense(&self) -> Option<&Array2<DataType>> { self.dense.as_ref() }
 
