@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
-use std::string::ToString;
 use anyhow::{anyhow, Result};
 use hdf5::{File, Group, H5Type};
 use crate::{Hdf5Serialization, PointSet, QuerySet};
