@@ -2,6 +2,8 @@ use std::cmp::min;
 use ndarray::{Array2, ArrayView2};
 use roaring::RoaringBitmap;
 use anyhow::{anyhow, Result};
+use hdf5::Group;
+use crate::Hdf5Serialization;
 
 /// Defines the exact nearest neighbors.
 #[derive(Eq, PartialEq, Default, Debug)]
@@ -43,10 +45,40 @@ impl GroundTruth {
     }
 }
 
+impl Hdf5Serialization for GroundTruth {
+    type Object = GroundTruth;
+
+    fn write(&self, group: &mut Group) -> Result<()> {
+        let dataset = group.new_dataset::<usize>()
+            .shape(self.0.shape())
+            .create(Self::label().as_str())?;
+        dataset.write(self.0.view())?;
+        Ok(())
+    }
+
+    fn read(group: &Group) -> Result<Self::Object> {
+        let dataset = group.dataset(Self::label().as_str())?;
+
+        let vectors = dataset.read_raw::<usize>()?;
+        let num_dimensions: usize = dataset.shape()[1];
+        let vector_count = vectors.len() / num_dimensions;
+        let vectors = Array2::from_shape_vec((vector_count, num_dimensions), vectors)?;
+
+        Ok(GroundTruth(vectors))
+    }
+
+    fn label() -> String {
+        "ground-truth".to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use approx_eq::assert_approx_eq;
+    use hdf5::File;
     use ndarray::Array2;
+    use tempdir::TempDir;
+    use crate::Hdf5Serialization;
     use crate::types::ground_truth::GroundTruth;
 
     #[test]
@@ -64,5 +96,31 @@ mod tests {
         let recall = gt.mean_recall(
             &vec![vec![1_usize, 2], vec![5, 6], vec![1, 8]]);
         assert_approx_eq!(recall.unwrap().into(), 0.666, 0.01);
+    }
+
+    #[test]
+    fn test_hdf5() {
+        let gt = GroundTruth::new(
+            Array2::from_shape_vec(
+                (3, 3),
+                vec![1_usize, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap());
+
+        let dir = TempDir::new("gt_test_hdf5").unwrap();
+        let path = dir.path().join("ann-dataset.hdf5");
+        let path = path.to_str().unwrap();
+        let hdf5 = File::create(path).unwrap();
+
+        let mut group = hdf5.group("/").unwrap();
+        assert!(gt.write(&mut group).is_ok());
+
+        let gt_copy = GroundTruth::read(&group).unwrap();
+        assert_eq!(&gt, &gt_copy);
+
+        let group = hdf5.group("/").unwrap();
+        let mut group = group.create_group("nested").unwrap();
+        assert!(gt.write(&mut group).is_ok());
+
+        let gt_copy = GroundTruth::read(&group).unwrap();
+        assert_eq!(&gt, &gt_copy);
     }
 }

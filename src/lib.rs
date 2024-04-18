@@ -35,6 +35,7 @@
 
 pub(crate) mod data;
 mod types;
+mod io;
 
 pub use crate::data::types::VectorSet;
 pub use crate::data::dataset::AnnDataset;
@@ -43,3 +44,5 @@ pub use crate::types::Metric;
 pub use crate::types::point_set::PointSet;
 pub use crate::types::query_set::QuerySet;
 pub use crate::types::ground_truth::GroundTruth;
+
+pub use crate::io::Hdf5Serialization;
