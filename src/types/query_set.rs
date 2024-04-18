@@ -106,7 +106,7 @@ impl<DataType: Clone + H5Type> Display for QuerySet<DataType> {
                self.points,
                self.neighbors.iter()
                    .map(|entry| format!("{}: {}", entry.0, entry.1))
-                   .collect::<Vec<_>>().join(";"))
+                   .collect::<Vec<_>>().join("; "))
     }
 }
 
