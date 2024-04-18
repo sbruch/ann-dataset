@@ -1,5 +1,5 @@
 use clap::Parser;
-use ann_dataset::{AnnDataset, Hdf5File};
+use ann_dataset::{InMemoryAnnDataset, Hdf5File};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -11,7 +11,7 @@ struct Args {
 
 fn main() {
     let args = Args::parse();
-    let dataset = AnnDataset::<f32>::read(args.path.as_str())
+    let dataset = InMemoryAnnDataset::<f32>::read(args.path.as_str())
         .expect("Unable to load the dataset");
     println!("{}", dataset);
 }

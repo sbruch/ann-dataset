@@ -3,7 +3,7 @@ use std::collections::BinaryHeap;
 use clap::Parser;
 use linfa_linalg::norm::Norm;
 use ndarray::{Array1, Array2, ArrayView1, Axis, Zip};
-use ann_dataset::{AnnDataset, Hdf5File, Metric, PointSet, QuerySet};
+use ann_dataset::{InMemoryAnnDataset, Hdf5File, Metric, PointSet, QuerySet, AnnDataset};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -120,7 +120,7 @@ fn find_gts(data: &Array2<f32>, queries: &Array2<f32>, k: usize)
     (gt_euclidean, gt_cosine, gt_ip)
 }
 
-fn attach_gt(dataset: &AnnDataset<f32>, query_set: &mut QuerySet<f32>, top_k: usize) {
+fn attach_gt(dataset: &InMemoryAnnDataset<f32>, query_set: &mut QuerySet<f32>, top_k: usize) {
     let (gt_euclidean, gt_cosine, gt_ip) = find_gts(
         dataset.get_data_points().get_dense().unwrap(),
         query_set.get_points().get_dense().unwrap(),
@@ -143,7 +143,7 @@ fn main() {
     let data_points = PointSet::new(Some(dense), None)
         .expect("Failed to create a point set from data points.");
 
-    let mut dataset = AnnDataset::create(data_points);
+    let mut dataset = InMemoryAnnDataset::create(data_points);
 
     if let Some(train) = args.train_query_points {
         println!("Processing train query points...");
