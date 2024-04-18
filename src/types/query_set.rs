@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
-use crate::data::types::GroundTruth;
+use ndarray::Array2;
 use crate::PointSet;
+use crate::types::ground_truth::GroundTruth;
 use crate::types::Metric;
 
 /// A set of query points (dense, sparse, or both) and their exact nearest neighbors for various
@@ -29,14 +30,14 @@ impl<DataType: Clone> QuerySet<DataType> {
     ///
     /// Returns an error if the number of rows in `neighbors` does not match the number of query
     /// points.
-    pub fn add_ground_truth(&mut self, metric: Metric, neighbors: GroundTruth) -> Result<()> {
+    pub fn add_ground_truth(&mut self, metric: Metric, neighbors: Array2<usize>) -> Result<()> {
         if neighbors.nrows() != self.points.num_points() {
             return Err(anyhow!(
                 "Number of rows in `neighbors` ({}) must match the \
                 number of query points in the set {}.",
                 neighbors.nrows(), self.points.num_points()));
         }
-        self.neighbors.insert(metric, neighbors);
+        self.neighbors.insert(metric, GroundTruth::new(neighbors));
         Ok(())
     }
 
@@ -70,9 +71,9 @@ mod tests {
             Euclidean, Array2::<usize>::ones((5, 1))).is_ok());
 
         assert!(query_set.get_ground_truth(&Cosine).is_err());
-        assert_eq!(query_set.get_ground_truth(&Euclidean).unwrap(),
+        assert_eq!(query_set.get_ground_truth(&Euclidean).unwrap().get_neighbors(),
                    Array2::<usize>::ones((5, 1)));
-        assert_eq!(query_set.get_ground_truth(&InnerProduct).unwrap(),
+        assert_eq!(query_set.get_ground_truth(&InnerProduct).unwrap().get_neighbors(),
                    Array2::<usize>::zeros((5, 1)));
     }
 }

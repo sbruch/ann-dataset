@@ -26,3 +26,5 @@ hdf5 = "0.8.1"
 anyhow = "1.0.82"
 tempdir = "0.3.7"
 clap = {  version = "4.5.4", features = ["derive"] }
+roaring = "0.10.3"
+approx_eq = "0.1.8"
