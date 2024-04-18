@@ -1,4 +1,4 @@
-pub mod dataset;
+pub mod in_memory_dataset;
 
 use crate::{PointSet, QuerySet};
 
@@ -9,6 +9,9 @@ const TEST_QUERY_SET: &str = "test_query_set";
 pub trait AnnDataset<DataType: Clone> {
     /// Returns all data points.
     fn get_data_points(&self) -> &PointSet<DataType>;
+
+    /// Iterates over chunks of data points.
+    fn iter<'a>(&'a self) -> impl Iterator<Item=&'a PointSet<DataType>> where DataType: 'a;
 
     /// Adds a new query set to the dataset with the given `label` or replaces one if it already
     /// exists.

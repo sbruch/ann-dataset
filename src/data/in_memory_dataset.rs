@@ -50,6 +50,10 @@ impl<DataType: Clone + H5Type> InMemoryAnnDataset<DataType> {
 impl<DataType: Clone + H5Type> AnnDataset<DataType> for InMemoryAnnDataset<DataType> {
     fn get_data_points(&self) -> &PointSet<DataType> { &self.data_points }
 
+    fn iter<'a>(&'a self) -> impl Iterator<Item=&'a PointSet<DataType>> where DataType: 'a {
+        [&self.data_points].into_iter()
+    }
+
     /// Adds a new query set to the dataset with the given `label` or replaces one if it already
     /// exists.
     ///
@@ -152,7 +156,7 @@ mod tests {
     use ndarray_rand::RandomExt;
     use sprs::{CsMat, TriMat};
     use tempdir::TempDir;
-    use crate::data::dataset::InMemoryAnnDataset;
+    use crate::data::in_memory_dataset::InMemoryAnnDataset;
     use crate::{Hdf5File, PointSet, QuerySet};
     use crate::data::AnnDataset;
 

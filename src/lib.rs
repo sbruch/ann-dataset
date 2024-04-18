@@ -12,7 +12,7 @@ mod types;
 mod io;
 
 pub use crate::data::AnnDataset;
-pub use crate::data::dataset::InMemoryAnnDataset;
+pub use crate::data::in_memory_dataset::InMemoryAnnDataset;
 
 pub use crate::types::Metric;
 pub use crate::types::point_set::PointSet;
