@@ -1,10 +1,19 @@
 use ndarray::{Array2, Axis};
 use sprs::CsMat;
 use anyhow::{anyhow, Result};
+use hdf5::{Group, H5Type};
+use crate::Hdf5Serialization;
+
+const DENSE: &str = "dense";
+const SPARSE: &str = "sparse";
+const SPARSE_INDPTR: &str = "indptr";
+const SPARSE_INDICES: &str = "indices";
+const SPARSE_DATA: &str = "data";
+const SPARSE_SHAPE: &str = "shape";
 
 /// A set of points (dense, sparse, or both) represented as a matrix,
 /// where each row corresponds to a single vector.
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug)]
 pub struct PointSet<DataType: Clone> {
     dense: Option<Array2<DataType>>,
     sparse: Option<CsMat<DataType>>,
@@ -51,7 +60,7 @@ impl<DataType: Clone> PointSet<DataType> {
     /// Returns the number of sparse dimensions.
     pub fn num_sparse_dimensions(&self) -> usize {
         if let Some(sparse) = self.sparse.as_ref() {
-            return sparse.cols()
+            return sparse.cols();
         }
         0_usize
     }
@@ -108,10 +117,79 @@ impl<DataType: Clone> PointSet<DataType> {
     }
 }
 
+impl<DataType: Clone + H5Type> Hdf5Serialization for PointSet<DataType> {
+    type Object = PointSet<DataType>;
+
+    fn write(&self, group: &mut Group) -> Result<()> {
+        if let Some(dense) = self.dense.as_ref() {
+            let dataset = group.new_dataset::<DataType>()
+                .shape(dense.shape())
+                .create(format!("{}-{}", Self::label(), DENSE).as_str())?;
+            dataset.write(dense)?;
+        }
+
+        if let Some(sparse) = self.sparse.as_ref() {
+            let group = group.create_group(
+                format!("{}-{}", Self::label(), SPARSE).as_str())?;
+            let shape = group.new_attr::<usize>().shape(2).create(SPARSE_SHAPE)?;
+            shape.write(&[sparse.shape().0, sparse.shape().1])?;
+
+            let indptr = group.new_dataset::<usize>()
+                .shape(sparse.indptr().len())
+                .create(SPARSE_INDPTR)?;
+            indptr.write(sparse.indptr().as_slice().unwrap())?;
+
+            let indices = group.new_dataset::<usize>()
+                .shape(sparse.indices().len())
+                .create(SPARSE_INDICES)?;
+            indices.write(sparse.indices())?;
+
+            let data = group.new_dataset::<DataType>()
+                .shape(sparse.data().len())
+                .create(SPARSE_DATA)?;
+            data.write(sparse.data())?;
+        }
+        Ok(())
+    }
+
+    fn read(group: &Group) -> Result<PointSet<DataType>> {
+        let dataset = group.dataset(
+            format!("{}-{}", Self::label(), DENSE).as_str())?;
+        let vectors: Vec<DataType> = dataset.read_raw::<DataType>()?;
+        let num_dimensions: usize = dataset.shape()[1];
+        let vector_count = vectors.len() / num_dimensions;
+        let dense = Array2::from_shape_vec((vector_count, num_dimensions), vectors)?;
+
+        let sparse_group = group.group(
+            format!("{}-{}", Self::label(), SPARSE).as_str())?;
+        let shape = sparse_group.attr(SPARSE_SHAPE)?.read_raw::<usize>()?;
+        if shape.len() != 2 {
+            return Err(anyhow!("Corrupt shape for sparse dataset '{}'", group.name()));
+        }
+
+        let indptr = sparse_group.dataset(SPARSE_INDPTR)?.read_raw::<usize>()?;
+        let indices = sparse_group.dataset(SPARSE_INDICES)?.read_raw::<usize>()?;
+        let data: Vec<DataType> = sparse_group.dataset(SPARSE_DATA)?.read_raw::<DataType>()?;
+        let sparse = CsMat::new((shape[0], shape[1]), indptr, indices, data);
+
+        Ok(PointSet {
+            dense: Some(dense),
+            sparse: Some(sparse),
+        })
+    }
+
+    fn label() -> String {
+        "point-set".to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use hdf5::File;
     use ndarray::{Array2, Axis};
     use sprs::{CsMat, TriMat};
+    use tempdir::TempDir;
+    use crate::Hdf5Serialization;
     use crate::types::point_set::PointSet;
 
     #[test]
@@ -181,5 +259,33 @@ mod tests {
         assert_eq!(14, point_set.num_dimensions());
         assert_eq!(10, point_set.num_dense_dimensions());
         assert_eq!(4, point_set.num_sparse_dimensions());
+    }
+
+    #[test]
+    fn test_hdf5() {
+        let dense = Array2::<f32>::eye(10);
+
+        let mut sparse = TriMat::new((10, 4));
+        sparse.add_triplet(0, 0, 3.0_f32);
+        sparse.add_triplet(1, 2, 2.0);
+        sparse.add_triplet(3, 0, -2.0);
+        let sparse: CsMat<_> = sparse.to_csr();
+
+        let point_set = PointSet::new(Some(dense), Some(sparse)).unwrap();
+
+        let dir = TempDir::new("pointset_test_hdf5").unwrap();
+        let path = dir.path().join("ann-dataset.hdf5");
+        let path = path.to_str().unwrap();
+        let hdf5 = File::create(path).unwrap();
+
+        let mut group = hdf5.group("/").unwrap();
+        assert!(point_set.write(&mut group).is_ok());
+        let point_set_copy = PointSet::<f32>::read(&group).unwrap();
+        assert_eq!(&point_set, &point_set_copy);
+
+        let mut group = group.create_group("/nested").unwrap();
+        assert!(point_set.write(&mut group).is_ok());
+        let point_set_copy = PointSet::<f32>::read(&group).unwrap();
+        assert_eq!(&point_set, &point_set_copy);
     }
 }
