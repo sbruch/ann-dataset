@@ -6,7 +6,7 @@
 //!  * Storage of query sets with ground-truth (i.e., exact nearest neighbors) according to
 //!    different metrics;
 //!  * Basic functionality such as computing recall given a retrieved set; and,
-//!  * Serialization and deserialization into HDF5 file format.
+//!  * Serialization into and deserialization from HDF5 file format.
 
 mod data;
 mod types;
