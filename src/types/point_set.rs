@@ -166,4 +166,20 @@ mod tests {
         let sparse_subset: CsMat<_> = sparse_subset.to_csr();
         assert_eq!(subset.get_sparse().unwrap(), &sparse_subset);
     }
+
+    #[test]
+    fn test_num_dimensions() {
+        let dense = Array2::<f32>::eye(10);
+
+        let mut sparse = TriMat::new((10, 4));
+        sparse.add_triplet(0, 0, 3.0_f32);
+        sparse.add_triplet(1, 2, 2.0);
+        sparse.add_triplet(3, 0, -2.0);
+        let sparse: CsMat<_> = sparse.to_csr();
+
+        let point_set = PointSet::new(Some(dense), Some(sparse)).unwrap();
+        assert_eq!(14, point_set.num_dimensions());
+        assert_eq!(10, point_set.num_dense_dimensions());
+        assert_eq!(4, point_set.num_sparse_dimensions());
+    }
 }

@@ -12,4 +12,5 @@ pub enum Metric {
 }
 
 #[doc(hidden)]
+#[allow(dead_code)]
 pub(crate) type GroundTruth = Array2<usize>;
