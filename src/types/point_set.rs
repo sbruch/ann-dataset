@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 use ndarray::{Array2, Axis};
 use sprs::CsMat;
 use anyhow::{anyhow, Result};
@@ -13,7 +14,7 @@ const SPARSE_SHAPE: &str = "shape";
 
 /// A set of points (dense, sparse, or both) represented as a matrix,
 /// where each row corresponds to a single vector.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub struct PointSet<DataType: Clone> {
     dense: Option<Array2<DataType>>,
     sparse: Option<CsMat<DataType>>,
@@ -120,7 +121,7 @@ impl<DataType: Clone> PointSet<DataType> {
 impl<DataType: Clone + H5Type> Hdf5Serialization for PointSet<DataType> {
     type Object = PointSet<DataType>;
 
-    fn write(&self, group: &mut Group) -> Result<()> {
+    fn serialize(&self, group: &mut Group) -> Result<()> {
         if let Some(dense) = self.dense.as_ref() {
             let dataset = group.new_dataset::<DataType>()
                 .shape(dense.shape())
@@ -152,7 +153,7 @@ impl<DataType: Clone + H5Type> Hdf5Serialization for PointSet<DataType> {
         Ok(())
     }
 
-    fn read(group: &Group) -> Result<Self::Object> {
+    fn deserialize(group: &Group) -> Result<Self::Object> {
         let dataset = group.dataset(
             format!("{}-{}", Self::label(), DENSE).as_str());
         let dense = match dataset {
@@ -187,6 +188,26 @@ impl<DataType: Clone + H5Type> Hdf5Serialization for PointSet<DataType> {
 
     fn label() -> String {
         "point-set".to_string()
+    }
+}
+
+impl<DataType: Clone + H5Type> Display for PointSet<DataType> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let dense = match self.dense.as_ref() {
+            None => { "is empty".to_string() }
+            Some(dense) => {
+                format!("has shape [{}, {}]", dense.shape()[0], dense.shape()[1])
+            }
+        };
+
+        let sparse = match self.sparse.as_ref() {
+            None => { "is empty".to_string() }
+            Some(sparse) => {
+                format!("has shape [{}, {}]", sparse.rows(), sparse.cols())
+            }
+        };
+
+        write!(f, "Dense set {}; Sparse set {}", dense, sparse)
     }
 }
 
@@ -286,13 +307,13 @@ mod tests {
         let hdf5 = File::create(path).unwrap();
 
         let mut group = hdf5.group("/").unwrap();
-        assert!(point_set.write(&mut group).is_ok());
-        let point_set_copy = PointSet::<f32>::read(&group).unwrap();
+        assert!(point_set.serialize(&mut group).is_ok());
+        let point_set_copy = PointSet::<f32>::deserialize(&group).unwrap();
         assert_eq!(&point_set, &point_set_copy);
 
         let mut group = group.create_group("/nested").unwrap();
-        assert!(point_set.write(&mut group).is_ok());
-        let point_set_copy = PointSet::<f32>::read(&group).unwrap();
+        assert!(point_set.serialize(&mut group).is_ok());
+        let point_set_copy = PointSet::<f32>::deserialize(&group).unwrap();
         assert_eq!(&point_set, &point_set_copy);
     }
 
@@ -307,13 +328,13 @@ mod tests {
         let hdf5 = File::create(path).unwrap();
 
         let mut group = hdf5.group("/").unwrap();
-        assert!(point_set.write(&mut group).is_ok());
-        let point_set_copy = PointSet::<f32>::read(&group).unwrap();
+        assert!(point_set.serialize(&mut group).is_ok());
+        let point_set_copy = PointSet::<f32>::deserialize(&group).unwrap();
         assert_eq!(&point_set, &point_set_copy);
 
         let mut group = group.create_group("/nested").unwrap();
-        assert!(point_set.write(&mut group).is_ok());
-        let point_set_copy = PointSet::<f32>::read(&group).unwrap();
+        assert!(point_set.serialize(&mut group).is_ok());
+        let point_set_copy = PointSet::<f32>::deserialize(&group).unwrap();
         assert_eq!(&point_set, &point_set_copy);
     }
 
@@ -333,13 +354,13 @@ mod tests {
         let hdf5 = File::create(path).unwrap();
 
         let mut group = hdf5.group("/").unwrap();
-        assert!(point_set.write(&mut group).is_ok());
-        let point_set_copy = PointSet::<f32>::read(&group).unwrap();
+        assert!(point_set.serialize(&mut group).is_ok());
+        let point_set_copy = PointSet::<f32>::deserialize(&group).unwrap();
         assert_eq!(&point_set, &point_set_copy);
 
         let mut group = group.create_group("/nested").unwrap();
-        assert!(point_set.write(&mut group).is_ok());
-        let point_set_copy = PointSet::<f32>::read(&group).unwrap();
+        assert!(point_set.serialize(&mut group).is_ok());
+        let point_set_copy = PointSet::<f32>::deserialize(&group).unwrap();
         assert_eq!(&point_set, &point_set_copy);
     }
 }

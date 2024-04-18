@@ -2,312 +2,242 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
 use std::string::ToString;
-use anyhow::anyhow;
-use hdf5::{File, H5Type};
-use ndarray::Array2;
-use sprs::CsMat;
-use crate::data::types::{GroundTruth, VectorSet};
+use anyhow::{anyhow, Result};
+use hdf5::{File, Group, H5Type};
+use crate::{Hdf5Serialization, PointSet, QuerySet};
+use crate::io::Hdf5File;
 
-const SPARSE_INDPTR: &str = "indptr";
-const SPARSE_INDICES: &str = "indices";
-const SPARSE_DATA: &str = "data";
-const SPARSE_SHAPE: &str = "shape";
-const GROUP_ROOT: &str = "/";
-const GROUP_SEPARATOR: &str = "/";
-const GROUP_GT: &str = "ground_truths";
+const TRAIN_QUERY_SET: &str = "train_query_set";
+const VALIDATION_QUERY_SET: &str = "validation_query_set";
+const TEST_QUERY_SET: &str = "test_query_set";
+const QUERY_SETS: &str = "query_sets";
 
-/// Encapsulates an ANN dataset.
-pub struct AnnDataset<DataType> {
-    vector_sets: HashMap<String, VectorSet<DataType>>,
-    ground_truths: HashMap<String, GroundTruth>,
+/// An ANN dataset.
+#[derive(Eq, PartialEq, Debug, Clone)]
+pub struct AnnDataset<DataType: Clone + H5Type> {
+    data_points: PointSet<DataType>,
+    query_sets: HashMap<String, QuerySet<DataType>>,
 }
 
-impl<DataType: H5Type> AnnDataset<DataType> {
-    /// Creates an empty dataset.
-    pub fn new() -> AnnDataset<DataType> {
+impl<DataType: Clone + H5Type> AnnDataset<DataType> {
+    /// Creates an `AnnDataset` object.
+    ///
+    /// Here is a simple example:
+    /// ```rust
+    /// use ndarray::Array2;
+    /// use sprs::{CsMat, TriMat};
+    /// use ann_dataset::{AnnDataset, PointSet};
+    ///
+    /// let dense = Array2::<f32>::eye(10);
+    /// let mut sparse = TriMat::new((10, 4));
+    /// sparse.add_triplet(0, 0, 3.0_f32);
+    /// sparse.add_triplet(1, 2, 2.0);
+    /// sparse.add_triplet(3, 0, -2.0);
+    /// sparse.add_triplet(9, 2, 3.4);
+    /// let sparse: CsMat<_> = sparse.to_csr();
+    ///
+    /// let data_points = PointSet::new(Some(dense.clone()), Some(sparse.clone()))
+    ///     .expect("Failed to create PointSet.");
+    ///
+    /// let dataset = AnnDataset::create(data_points);
+    /// ```
+    pub fn create(data_points: PointSet<DataType>) -> AnnDataset<DataType> {
         AnnDataset {
-            vector_sets: HashMap::new(),
-            ground_truths: HashMap::new(),
+            data_points,
+            query_sets: HashMap::new(),
         }
     }
 
-    /// Loads an `AnnDataset` from the given hdf5 file.
-    pub fn load(path: &str) -> anyhow::Result<AnnDataset<DataType>> {
-        let hdf5_dataset = File::open(path)?;
-
-        let mut ann_dataset = Self::new();
-
-        let datasets = hdf5_dataset.datasets()?;
-        datasets.iter().try_for_each(|dataset| {
-            let name = dataset.name();
-            let name = name.strip_prefix(GROUP_ROOT).unwrap();
-
-            let vectors = dataset.read_raw::<DataType>()?;
-            let num_dimensions: usize = dataset.shape()[1];
-            let vector_count = vectors.len() / num_dimensions;
-            let vectors = Array2::from_shape_vec((vector_count, num_dimensions), vectors)?;
-
-            ann_dataset.add_points(name, VectorSet::Dense(vectors))?;
-            anyhow::Ok(())
-        })?;
-
-        let groups = hdf5_dataset.groups()?;
-        groups.iter().try_for_each(|group| {
-            if group.name() == GROUP_ROOT { return anyhow::Ok(()); }
-
-            let name = group.name();
-            let name = name.strip_prefix(GROUP_ROOT).unwrap();
-            if name == GROUP_GT { return anyhow::Ok(()); }
-
-            let shape = group.attr(SPARSE_SHAPE)?.read_raw::<usize>()?;
-            if shape.len() != 2 {
-                return Err(anyhow!("Corrupt shape for sparse dataset '{}'", group.name()));
-            }
-
-            let indptr = group.dataset(SPARSE_INDPTR)?.read_raw::<usize>()?;
-            let indices = group.dataset(SPARSE_INDICES)?.read_raw::<usize>()?;
-            let data = group.dataset(SPARSE_DATA)?.read_raw::<DataType>()?;
-            let vectors = CsMat::new((shape[0], shape[1]), indptr, indices, data);
-
-            ann_dataset.add_points(name, VectorSet::Sparse(vectors))?;
-            anyhow::Ok(())
-        })?;
-
-        let gt_group = hdf5_dataset.group(GROUP_GT)?;
-        gt_group.datasets()?.iter().try_for_each(|dataset| {
-            let name = dataset.name();
-            let name = name.strip_prefix(GROUP_ROOT).unwrap();
-            let name = name.strip_prefix(GROUP_GT).unwrap();
-            let name = name.strip_prefix(GROUP_SEPARATOR).unwrap();
-
-            let vectors = dataset.read_raw::<usize>()?;
-            let num_dimensions: usize = dataset.shape()[1];
-            let vector_count = vectors.len() / num_dimensions;
-            let vectors = Array2::from_shape_vec((vector_count, num_dimensions), vectors)?;
-
-            ann_dataset.add_ground_truth(name, vectors)?;
-            anyhow::Ok(())
-        })?;
-
-        Ok(ann_dataset)
+    /// Returns the data points.
+    pub fn get_data_points(&self) -> &PointSet<DataType> {
+        &self.data_points
     }
 
-    /// Reads a vector set with the given label.
-    pub fn read_points(&self, label: &str) -> anyhow::Result<&VectorSet<DataType>> {
-        match self.vector_sets.get(label) {
-            None => { Err(anyhow!("Vector set {} does not exist", label)) }
+    /// Adds a new query set to the dataset with the given `label` or replaces one if it already
+    /// exists.
+    ///
+    /// Consider the following example:
+    /// ```rust
+    /// use ndarray::Array2;
+    /// use ann_dataset::{AnnDataset, PointSet, QuerySet};
+    ///
+    /// let dense = Array2::<f32>::eye(10);
+    /// let data_points = PointSet::new(Some(dense.clone()), None)
+    ///     .expect("Failed to create PointSet.");
+    /// let query_points = data_points.clone();
+    ///
+    /// let mut dataset = AnnDataset::create(data_points);
+    ///
+    /// let query_set = QuerySet::new(query_points);
+    /// dataset.add_query_set("train", query_set);
+    /// ```
+    pub fn add_query_set(&mut self, label: &str, query_set: QuerySet<DataType>) {
+        self.query_sets.insert(label.to_string(), query_set);
+    }
+
+    /// Convenience method to add a "train" query set.
+    pub fn add_train_query_set(&mut self, query_set: QuerySet<DataType>) {
+        self.add_query_set(TRAIN_QUERY_SET, query_set);
+    }
+
+    /// Convenience method to add a "validation" query set.
+    pub fn add_validation_query_set(&mut self, query_set: QuerySet<DataType>) {
+        self.add_query_set(VALIDATION_QUERY_SET, query_set);
+    }
+
+    /// Convenience method to add a "test" query set.
+    pub fn add_test_query_set(&mut self, query_set: QuerySet<DataType>) {
+        self.add_query_set(TEST_QUERY_SET, query_set);
+    }
+
+    /// Returns the `QuerySet` associated with `label`.
+    pub fn get_query_set(&self, label: &str) -> Result<&QuerySet<DataType>> {
+        match self.query_sets.get(label) {
+            None => { Err(anyhow!("Query set {} does not exist", label)) }
             Some(set) => { Ok(set) }
         }
     }
 
-    /// Reads a vector set with the given label.
-    pub fn read_ground_truth(&self, label: &str) -> anyhow::Result<&GroundTruth> {
-        match self.ground_truths.get(label) {
-            None => { Err(anyhow!("Ground-truth set {} does not exist", label)) }
-            Some(set) => { Ok(set) }
-        }
+    /// Convenience method that returns the "train" `QuerySet`.
+    pub fn get_train_query_set(&self) -> Result<&QuerySet<DataType>> {
+        self.get_query_set(TRAIN_QUERY_SET)
     }
 
-    /// Adds a vector set with the given label to the dataset,
-    /// or replaces the set if it already exists.
-    pub fn add_points(&mut self, label: &str, vector_set: VectorSet<DataType>) -> anyhow::Result<()> {
-        self.vector_sets.insert(label.to_string(), vector_set);
+    /// Convenience method that returns the "train" `QuerySet`.
+    pub fn get_validation_query_set(&self) -> Result<&QuerySet<DataType>> {
+        self.get_query_set(VALIDATION_QUERY_SET)
+    }
+
+    /// Convenience method that returns the "test" `QuerySet`.
+    pub fn get_test_query_set(&self) -> Result<&QuerySet<DataType>> {
+        self.get_query_set(TEST_QUERY_SET)
+    }
+}
+
+impl<DataType: Clone + H5Type> Hdf5Serialization for AnnDataset<DataType> {
+    type Object = AnnDataset<DataType>;
+
+    fn serialize(&self, group: &mut Group) -> Result<()> {
+        self.data_points.serialize(group)?;
+
+        let query_group = group.create_group(QUERY_SETS)?;
+        self.query_sets.iter().try_for_each(|entry| {
+            let mut grp = query_group.create_group(entry.0)?;
+            entry.1.serialize(&mut grp)?;
+            anyhow::Ok(())
+        })?;
         Ok(())
     }
 
-    /// Adds a set of ground truths or replaces the set if it already exists.
-    pub fn add_ground_truth(&mut self, label: &str, gt: GroundTruth) -> anyhow::Result<()> {
-        self.ground_truths.insert(label.to_string(), gt);
-        Ok(())
+    fn deserialize(group: &Group) -> Result<Self::Object> {
+        let data_points = PointSet::<DataType>::deserialize(group)?;
+
+        let mut query_sets: HashMap<String, QuerySet<DataType>> = HashMap::new();
+        let query_group = group.group(QUERY_SETS)?;
+        query_group.groups()?.iter().try_for_each(|grp| {
+            let name = grp.name();
+            let name = name.split("/").last().unwrap();
+            let query_set = QuerySet::<DataType>::deserialize(grp)?;
+            query_sets.insert(name.to_string(), query_set);
+            anyhow::Ok(())
+        })?;
+
+        Ok(AnnDataset { data_points, query_sets })
     }
 
-    /// Stores the dataset in an hdf5 file at the given path.
-    pub fn write(&self, path: &str) -> anyhow::Result<()> {
+    fn label() -> String {
+        "ann-dataset".to_string()
+    }
+}
+
+impl<DataType: Clone + H5Type> Hdf5File for AnnDataset<DataType> {
+    type Object = AnnDataset<DataType>;
+
+    fn write(&self, path: &str) -> Result<()> {
         let file = File::create(path)?;
-        self.vector_sets.iter().try_for_each(|(label, vector_set)| {
-            match vector_set {
-                VectorSet::Dense(dense_set) => {
-                    let dataset = file.new_dataset::<DataType>()
-                        .shape(dense_set.shape())
-                        .create(label.as_str())?;
-                    dataset.write(dense_set)?;
-                }
-                VectorSet::Sparse(sparse_set) => {
-                    let group = file.create_group(label)?;
-
-                    let shape = group.new_attr::<usize>().shape(2).create(SPARSE_SHAPE)?;
-                    shape.write(&[sparse_set.shape().0, sparse_set.shape().1])?;
-
-                    let indptr = group.new_dataset::<usize>()
-                        .shape(sparse_set.indptr().len())
-                        .create(SPARSE_INDPTR)?;
-                    indptr.write(sparse_set.indptr().as_slice().unwrap())?;
-
-                    let indices = group.new_dataset::<usize>()
-                        .shape(sparse_set.indices().len())
-                        .create(SPARSE_INDICES)?;
-                    indices.write(sparse_set.indices())?;
-
-                    let data = group.new_dataset::<DataType>()
-                        .shape(sparse_set.data().len())
-                        .create(SPARSE_DATA)?;
-                    data.write(sparse_set.data())?;
-                }
-            }
-            anyhow::Ok(())
-        })?;
-
-        let gt_group = file.create_group(GROUP_GT)?;
-        self.ground_truths.iter().try_for_each(|(label, gt)| {
-            let dataset = gt_group.new_dataset::<usize>()
-                .shape(gt.shape())
-                .create(label.as_str())?;
-            dataset.write(gt)?;
-            anyhow::Ok(())
-        })?;
+        let mut root = file.group("/")?;
+        Hdf5Serialization::serialize(self, &mut root)?;
         file.close()?;
         Ok(())
     }
+
+    fn read(path: &str) -> Result<Self::Object> {
+        let hdf5_dataset = File::open(path)?;
+        let root = hdf5_dataset.group("/")?;
+        <AnnDataset::<DataType> as Hdf5Serialization>::deserialize(&root)
+    }
 }
 
-impl<DataType> fmt::Display for AnnDataset<DataType> {
+impl<DataType: Clone + H5Type> fmt::Display for AnnDataset<DataType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut dense_labels: Vec<String> = vec![];
-        let mut sparse_labels: Vec<String> = vec![];
-        self.vector_sets.iter().for_each(|entry| {
-            match entry.1 {
-                VectorSet::Dense(set) => {
-                    dense_labels.push(format!("  - {} (dense) with shape {:?}",
-                                              entry.0.to_string(), set.shape()));
-                }
-                VectorSet::Sparse(set) => {
-                    sparse_labels.push(format!("  - {} (sparse) with shape [{}, {}]",
-                                               entry.0.to_string(), set.rows(), set.cols()));
-                }
-            }
-        });
-
-        let ground_truths: Vec<String> = self.ground_truths.iter().map(|entry| {
-            format!("  - {} (ground-truth) with shape {:?}",
-                    entry.0.to_string(), entry.1.shape())
-        }).collect();
-
-        write!(f, "There are a total of {} datasets: \n{}\n{}\n{}",
-               self.vector_sets.len(),
-               dense_labels.join("\n"),
-               sparse_labels.join("\n"),
-               ground_truths.join("\n"))
+        write!(f, "Point Set: {}\n{}",
+               self.data_points,
+               self.query_sets.iter()
+                   .map(|entry| format!("{}: {}", entry.0, entry.1))
+                   .collect::<Vec<_>>()
+                   .join("\n"))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use ndarray::{Array2, ArrayView2};
-    use sprs::{CsMat, CsMatView, TriMat};
+    use ndarray::Array2;
+    use ndarray_rand::rand_distr::Uniform;
+    use ndarray_rand::RandomExt;
+    use sprs::{CsMat, TriMat};
     use tempdir::TempDir;
     use crate::data::dataset::AnnDataset;
-    use crate::data::types::VectorSet;
+    use crate::{Hdf5File, PointSet, QuerySet};
 
-    fn assert_eq_dense(expected: ArrayView2<f32>, value: &VectorSet<f32>) {
-        match value {
-            VectorSet::Dense(set) => {
-                assert_eq!(expected, set);
-            }
-            VectorSet::Sparse(_) => {
-                panic!("Dense set was turned into a sparse set!");
-            }
-        }
-    }
+    fn sample_data_points() -> PointSet<f32> {
+        let dense_set = Array2::random((4, 10), Uniform::new(0.0, 1.0));
 
-    fn assert_eq_sparse(expected: CsMatView<f32>, value: &VectorSet<f32>) {
-        match value {
-            VectorSet::Dense(_) => {
-                panic!("Sparse set was turned into a dense set!");
-            }
-            VectorSet::Sparse(set) => {
-                assert_eq!(expected, set.view());
-            }
-        }
+        let mut sparse_set = TriMat::new((4, 4));
+        sparse_set.add_triplet(0, 0, 3.0_f32);
+        sparse_set.add_triplet(1, 2, 2.0);
+        sparse_set.add_triplet(3, 0, -2.0);
+        let sparse_set: CsMat<_> = sparse_set.to_csr();
+
+        PointSet::new(Some(dense_set), Some(sparse_set)).unwrap()
     }
 
     #[test]
-    fn test_new() {
-        let set_a = Array2::<f32>::eye(5);
-        let set_b = Array2::<usize>::ones((5, 10));
-
-        let mut set_c = TriMat::new((4, 4));
-        set_c.add_triplet(0, 0, 3.0_f32);
-        set_c.add_triplet(1, 2, 2.0);
-        set_c.add_triplet(3, 0, -2.0);
-        let set_c: CsMat<_> = set_c.to_csr();
-
-        let mut dataset = AnnDataset::<f32>::new();
-        assert!(dataset.add_points("a", VectorSet::Dense(set_a.clone())).is_ok());
-        assert!(dataset.add_ground_truth("b", set_b.clone()).is_ok());
-        assert!(dataset.add_points("c", VectorSet::Sparse(set_c.clone())).is_ok());
-
-        let a = dataset.read_points("a");
-        assert!(a.is_ok());
-        assert_eq_dense(set_a.view(), &a.unwrap());
-
-        let b = dataset.read_ground_truth("b");
-        assert!(b.is_ok());
-        assert_eq!(set_b.view(), b.unwrap());
-        assert!(dataset.read_points("b").is_err());
-
-        let c = dataset.read_points("c");
-        assert!(c.is_ok());
-        assert_eq_sparse(set_c.view(), &c.unwrap());
+    fn test_create() {
+        let data_points = sample_data_points();
+        let dataset = AnnDataset::<f32>::create(data_points.clone());
+        let copy = dataset.get_data_points();
+        assert_eq!(&data_points, copy);
     }
 
     #[test]
-    fn test_nonexistent() {
-        let dataset = AnnDataset::<f32>::new();
-        assert!(dataset.read_points("a").is_err());
-        assert!(dataset.read_ground_truth("a").is_err());
-    }
+    fn test_query_points() {
+        let data_points = sample_data_points();
+        let mut dataset = AnnDataset::<f32>::create(data_points.clone());
 
-    #[test]
-    fn test_replace() {
-        let set_a = Array2::<f32>::eye(5);
+        assert!(dataset.get_train_query_set().is_err());
+        assert!(dataset.get_validation_query_set().is_err());
+        assert!(dataset.get_test_query_set().is_err());
 
-        let mut set_b = TriMat::new((4, 4));
-        set_b.add_triplet(0, 0, 3.0_f32);
-        set_b.add_triplet(1, 2, 2.0);
-        set_b.add_triplet(3, 0, -2.0);
-        let set_b: CsMat<_> = set_b.to_csr();
+        let query_points = sample_data_points();
+        dataset.add_train_query_set(QuerySet::new(query_points.clone()));
+        assert!(dataset.get_train_query_set().is_ok());
+        let copy = dataset.get_train_query_set().unwrap();
+        assert_eq!(&query_points, copy.get_points());
 
-        let mut dataset = AnnDataset::<f32>::new();
-        assert!(dataset.add_points("a", VectorSet::Dense(set_a.clone())).is_ok());
-        assert!(dataset.add_points("a", VectorSet::Sparse(set_b.clone())).is_ok());
-
-        let a = dataset.read_points("a");
-        assert!(a.is_ok());
-        assert_eq_sparse(set_b.view(), &a.unwrap());
+        // Replace an existing query set.
+        let query_points = sample_data_points();
+        dataset.add_train_query_set(QuerySet::new(query_points.clone()));
+        assert!(dataset.get_train_query_set().is_ok());
+        let copy = dataset.get_train_query_set().unwrap();
+        assert_eq!(&query_points, copy.get_points());
     }
 
     #[test]
     fn test_write() {
-        let set_a = Array2::<f32>::eye(5);
-        let set_b = Array2::<usize>::ones((5, 10));
-
-        let mut set_c = TriMat::new((4, 4));
-        set_c.add_triplet(0, 0, 3.0_f32);
-        set_c.add_triplet(1, 2, 2.0);
-        set_c.add_triplet(3, 0, -2.0);
-        let set_c: CsMat<_> = set_c.to_csr();
-
-        let mut set_d = TriMat::new((4, 4));
-        set_d.add_triplet(0, 3, 2.0_f32);
-        set_d.add_triplet(1, 1, 1.0);
-        set_d.add_triplet(3, 0, -1.0);
-        let set_d: CsMat<_> = set_d.to_csr();
-
-        let mut dataset = AnnDataset::<f32>::new();
-        assert!(dataset.add_points("a", VectorSet::Dense(set_a.clone())).is_ok());
-        assert!(dataset.add_ground_truth("b", set_b.clone()).is_ok());
-        assert!(dataset.add_points("c", VectorSet::Sparse(set_c.clone())).is_ok());
-        assert!(dataset.add_points("d", VectorSet::Sparse(set_d.clone())).is_ok());
+        let data_points = sample_data_points();
+        let mut dataset = AnnDataset::<f32>::create(data_points.clone());
+        let query_points = sample_data_points();
+        dataset.add_train_query_set(QuerySet::new(query_points.clone()));
 
         let dir = TempDir::new("test_write").unwrap();
         let path = dir.path().join("ann-dataset.hdf5");
@@ -317,24 +247,11 @@ mod tests {
         assert!(result.is_ok());
 
         // Next, load the dataset and assert that vector sets are intact.
-        let dataset = AnnDataset::<f32>::load(path);
+        let dataset = AnnDataset::<f32>::read(path);
         assert!(dataset.is_ok());
         let dataset = dataset.unwrap();
 
-        let a = dataset.read_points("a");
-        assert!(a.is_ok());
-        assert_eq_dense(set_a.view(), &a.unwrap());
-
-        let b = dataset.read_ground_truth("b");
-        assert!(b.is_ok());
-        assert_eq!(set_b.view(), b.unwrap());
-
-        let c = dataset.read_points("c");
-        assert!(c.is_ok());
-        assert_eq_sparse(set_c.view(), &c.unwrap());
-
-        let d = dataset.read_points("d");
-        assert!(d.is_ok());
-        assert_eq_sparse(set_d.view(), &d.unwrap());
+        assert_eq!(&data_points, dataset.get_data_points());
+        assert_eq!(&query_points, dataset.get_train_query_set().unwrap().get_points());
     }
 }

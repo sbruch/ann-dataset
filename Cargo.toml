@@ -4,14 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 license = "MIT"
-description = "A convenient HDF5 wrapper for working with Approximate Nearest Neighbor search datasets"
-readme = "README.md"
+description = "A lightweight research library for handling in-memory Approximate Nearest Neighbor search datasets."
 repository = "https://github.com/sbruch/ann-dataset"
+keywords = ["ann-search", "nearest-neighbor", "sparse-dense", "vector-sets"]
 
 include = [
     "**/*.rs",
     "Cargo.toml",
-    "README.md",
     "LICENSE",
 ]
 
@@ -21,6 +20,7 @@ crate-type = ["lib"]
 
 [dependencies]
 ndarray = { version = "0.15.6", features = ["serde"] }
+ndarray-rand = "0.14.0"
 sprs = { version = "0.11.1", features = ["serde"] }
 hdf5 = "0.8.1"
 anyhow = "1.0.82"
