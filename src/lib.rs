@@ -1,5 +1,4 @@
-//! A lightweight research library for handling in-memory Approximate Nearest Neighbor search
-//! datasets.
+//! A lightweight research library for managing Approximate Nearest Neighbor search datasets.
 //!
 //! It offers the following features:
 //!  * Storage of dense, sparse, and dense-sparse vector sets;
