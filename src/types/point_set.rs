@@ -152,30 +152,37 @@ impl<DataType: Clone + H5Type> Hdf5Serialization for PointSet<DataType> {
         Ok(())
     }
 
-    fn read(group: &Group) -> Result<PointSet<DataType>> {
+    fn read(group: &Group) -> Result<Self::Object> {
         let dataset = group.dataset(
-            format!("{}-{}", Self::label(), DENSE).as_str())?;
-        let vectors: Vec<DataType> = dataset.read_raw::<DataType>()?;
-        let num_dimensions: usize = dataset.shape()[1];
-        let vector_count = vectors.len() / num_dimensions;
-        let dense = Array2::from_shape_vec((vector_count, num_dimensions), vectors)?;
+            format!("{}-{}", Self::label(), DENSE).as_str());
+        let dense = match dataset {
+            Ok(dataset) => {
+                let vectors: Vec<DataType> = dataset.read_raw::<DataType>()?;
+                let num_dimensions: usize = dataset.shape()[1];
+                let vector_count = vectors.len() / num_dimensions;
+                Some(Array2::from_shape_vec((vector_count, num_dimensions), vectors)?)
+            }
+            Err(_) => { None }
+        };
 
         let sparse_group = group.group(
-            format!("{}-{}", Self::label(), SPARSE).as_str())?;
-        let shape = sparse_group.attr(SPARSE_SHAPE)?.read_raw::<usize>()?;
-        if shape.len() != 2 {
-            return Err(anyhow!("Corrupt shape for sparse dataset '{}'", group.name()));
-        }
+            format!("{}-{}", Self::label(), SPARSE).as_str());
+        let sparse = match sparse_group {
+            Ok(sparse_group) => {
+                let shape = sparse_group.attr(SPARSE_SHAPE)?.read_raw::<usize>()?;
+                if shape.len() != 2 {
+                    return Err(anyhow!("Corrupt shape for sparse dataset '{}'", group.name()));
+                }
 
-        let indptr = sparse_group.dataset(SPARSE_INDPTR)?.read_raw::<usize>()?;
-        let indices = sparse_group.dataset(SPARSE_INDICES)?.read_raw::<usize>()?;
-        let data: Vec<DataType> = sparse_group.dataset(SPARSE_DATA)?.read_raw::<DataType>()?;
-        let sparse = CsMat::new((shape[0], shape[1]), indptr, indices, data);
+                let indptr = sparse_group.dataset(SPARSE_INDPTR)?.read_raw::<usize>()?;
+                let indices = sparse_group.dataset(SPARSE_INDICES)?.read_raw::<usize>()?;
+                let data: Vec<DataType> = sparse_group.dataset(SPARSE_DATA)?.read_raw::<DataType>()?;
+                Some(CsMat::new((shape[0], shape[1]), indptr, indices, data))
+            }
+            Err(_) => { None }
+        };
 
-        Ok(PointSet {
-            dense: Some(dense),
-            sparse: Some(sparse),
-        })
+        Ok(PointSet { dense, sparse })
     }
 
     fn label() -> String {
@@ -272,6 +279,53 @@ mod tests {
         let sparse: CsMat<_> = sparse.to_csr();
 
         let point_set = PointSet::new(Some(dense), Some(sparse)).unwrap();
+
+        let dir = TempDir::new("pointset_test_hdf5").unwrap();
+        let path = dir.path().join("ann-dataset.hdf5");
+        let path = path.to_str().unwrap();
+        let hdf5 = File::create(path).unwrap();
+
+        let mut group = hdf5.group("/").unwrap();
+        assert!(point_set.write(&mut group).is_ok());
+        let point_set_copy = PointSet::<f32>::read(&group).unwrap();
+        assert_eq!(&point_set, &point_set_copy);
+
+        let mut group = group.create_group("/nested").unwrap();
+        assert!(point_set.write(&mut group).is_ok());
+        let point_set_copy = PointSet::<f32>::read(&group).unwrap();
+        assert_eq!(&point_set, &point_set_copy);
+    }
+
+    #[test]
+    fn test_hdf5_dense() {
+        let dense = Array2::<f32>::eye(10);
+        let point_set = PointSet::new(Some(dense), None).unwrap();
+
+        let dir = TempDir::new("pointset_test_hdf5").unwrap();
+        let path = dir.path().join("ann-dataset.hdf5");
+        let path = path.to_str().unwrap();
+        let hdf5 = File::create(path).unwrap();
+
+        let mut group = hdf5.group("/").unwrap();
+        assert!(point_set.write(&mut group).is_ok());
+        let point_set_copy = PointSet::<f32>::read(&group).unwrap();
+        assert_eq!(&point_set, &point_set_copy);
+
+        let mut group = group.create_group("/nested").unwrap();
+        assert!(point_set.write(&mut group).is_ok());
+        let point_set_copy = PointSet::<f32>::read(&group).unwrap();
+        assert_eq!(&point_set, &point_set_copy);
+    }
+
+    #[test]
+    fn test_hdf5_sparse() {
+        let mut sparse = TriMat::new((10, 4));
+        sparse.add_triplet(0, 0, 3.0_f32);
+        sparse.add_triplet(1, 2, 2.0);
+        sparse.add_triplet(3, 0, -2.0);
+        let sparse: CsMat<_> = sparse.to_csr();
+
+        let point_set = PointSet::new(None, Some(sparse)).unwrap();
 
         let dir = TempDir::new("pointset_test_hdf5").unwrap();
         let path = dir.path().join("ann-dataset.hdf5");
