@@ -34,6 +34,9 @@
 //! ```
 
 pub(crate) mod data;
+mod types;
 
 pub use crate::data::types::VectorSet;
 pub use crate::data::dataset::AnnDataset;
+
+pub use crate::types::point_set::PointSet;
