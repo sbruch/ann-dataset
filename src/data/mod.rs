@@ -11,7 +11,9 @@ pub trait AnnDataset<DataType: Clone> {
     fn get_data_points(&self) -> &PointSet<DataType>;
 
     /// Iterates over chunks of data points.
-    fn iter<'a>(&'a self) -> impl Iterator<Item=&'a PointSet<DataType>> where DataType: 'a;
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a PointSet<DataType>>
+    where
+        DataType: 'a;
 
     /// Adds a new query set to the dataset with the given `label` or replaces one if it already
     /// exists.

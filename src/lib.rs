@@ -35,16 +35,16 @@
 //! let recall = gt.mean_recall(&[]);
 //! ```
 mod data;
-mod types;
 mod io;
+mod types;
 
-pub use crate::data::AnnDataset;
 pub use crate::data::in_memory_dataset::InMemoryAnnDataset;
+pub use crate::data::AnnDataset;
 
-pub use crate::types::Metric;
+pub use crate::types::ground_truth::GroundTruth;
 pub use crate::types::point_set::PointSet;
 pub use crate::types::query_set::QuerySet;
-pub use crate::types::ground_truth::GroundTruth;
+pub use crate::types::Metric;
 
-pub use crate::io::Hdf5Serialization;
 pub use crate::io::Hdf5File;
+pub use crate::io::Hdf5Serialization;

@@ -1,11 +1,11 @@
+use crate::data::AnnDataset;
+use crate::io::Hdf5File;
+use crate::{Hdf5Serialization, PointSet, QuerySet};
+use anyhow::{anyhow, Result};
+use hdf5::{File, Group, H5Type};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
-use anyhow::{anyhow, Result};
-use hdf5::{File, Group, H5Type};
-use crate::{Hdf5Serialization, PointSet, QuerySet};
-use crate::data::AnnDataset;
-use crate::io::Hdf5File;
 
 const QUERY_SETS: &str = "query_sets";
 
@@ -47,9 +47,14 @@ impl<DataType: Clone + H5Type> InMemoryAnnDataset<DataType> {
 }
 
 impl<DataType: Clone + H5Type> AnnDataset<DataType> for InMemoryAnnDataset<DataType> {
-    fn get_data_points(&self) -> &PointSet<DataType> { &self.data_points }
+    fn get_data_points(&self) -> &PointSet<DataType> {
+        &self.data_points
+    }
 
-    fn iter<'a>(&'a self) -> impl Iterator<Item=&'a PointSet<DataType>> where DataType: 'a {
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a PointSet<DataType>>
+    where
+        DataType: 'a,
+    {
         [&self.data_points].into_iter()
     }
 
@@ -77,8 +82,8 @@ impl<DataType: Clone + H5Type> AnnDataset<DataType> for InMemoryAnnDataset<DataT
 
     fn get_query_set(&self, label: &str) -> Result<&QuerySet<DataType>> {
         match self.query_sets.get(label) {
-            None => { Err(anyhow!("Query set {} does not exist", label)) }
-            Some(set) => { Ok(set) }
+            None => Err(anyhow!("Query set {} does not exist", label)),
+            Some(set) => Ok(set),
         }
     }
 }
@@ -105,13 +110,16 @@ impl<DataType: Clone + H5Type> Hdf5Serialization for InMemoryAnnDataset<DataType
         let query_group = group.group(QUERY_SETS)?;
         query_group.groups()?.iter().try_for_each(|grp| {
             let name = grp.name();
-            let name = name.split("/").last().unwrap();
+            let name = name.split('/').last().unwrap();
             let query_set = QuerySet::<DataType>::deserialize(grp)?;
             query_sets.insert(name.to_string(), query_set);
             anyhow::Ok(())
         })?;
 
-        Ok(InMemoryAnnDataset { data_points, query_sets })
+        Ok(InMemoryAnnDataset {
+            data_points,
+            query_sets,
+        })
     }
 
     fn label() -> String {
@@ -133,31 +141,35 @@ impl<DataType: Clone + H5Type> Hdf5File for InMemoryAnnDataset<DataType> {
     fn read(path: &str) -> Result<Self::Object> {
         let hdf5_dataset = File::open(path)?;
         let root = hdf5_dataset.group("/")?;
-        <InMemoryAnnDataset::<DataType> as Hdf5Serialization>::deserialize(&root)
+        <InMemoryAnnDataset<DataType> as Hdf5Serialization>::deserialize(&root)
     }
 }
 
 impl<DataType: Clone + H5Type> fmt::Display for InMemoryAnnDataset<DataType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "Point Set: {}\n{}",
-               self.data_points,
-               self.query_sets.iter()
-                   .map(|entry| format!("{}: {}", entry.0, entry.1))
-                   .collect::<Vec<_>>()
-                   .join("\n"))
+        write!(
+            f,
+            "Point Set: {}\n{}",
+            self.data_points,
+            self.query_sets
+                .iter()
+                .map(|entry| format!("{}: {}", entry.0, entry.1))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::data::in_memory_dataset::InMemoryAnnDataset;
+    use crate::data::AnnDataset;
+    use crate::{Hdf5File, PointSet, QuerySet};
     use ndarray::Array2;
     use ndarray_rand::rand_distr::Uniform;
     use ndarray_rand::RandomExt;
     use sprs::{CsMat, TriMat};
     use tempdir::TempDir;
-    use crate::data::in_memory_dataset::InMemoryAnnDataset;
-    use crate::{Hdf5File, PointSet, QuerySet};
-    use crate::data::AnnDataset;
 
     fn sample_data_points() -> PointSet<f32> {
         let dense_set = Array2::random((4, 10), Uniform::new(0.0, 1.0));
@@ -222,6 +234,9 @@ mod tests {
         let dataset = dataset.unwrap();
 
         assert_eq!(&data_points, dataset.get_data_points());
-        assert_eq!(&query_points, dataset.get_train_query_set().unwrap().get_points());
+        assert_eq!(
+            &query_points,
+            dataset.get_train_query_set().unwrap().get_points()
+        );
     }
 }

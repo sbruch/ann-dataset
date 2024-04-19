@@ -1,9 +1,9 @@
-use std::cmp::{Ordering, Reverse};
-use std::collections::BinaryHeap;
+use ann_dataset::{AnnDataset, Hdf5File, InMemoryAnnDataset, Metric, PointSet, QuerySet};
 use clap::Parser;
 use linfa_linalg::norm::Norm;
 use ndarray::{Array1, Array2, ArrayView1, Axis, Zip};
-use ann_dataset::{InMemoryAnnDataset, Hdf5File, Metric, PointSet, QuerySet, AnnDataset};
+use std::cmp::{Ordering, Reverse};
+use std::collections::BinaryHeap;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -47,13 +47,13 @@ impl Eq for SearchResult {}
 
 impl PartialOrd for SearchResult {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.score.partial_cmp(&other.score)
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for SearchResult {
     fn cmp(&self, other: &SearchResult) -> Ordering {
-        self.partial_cmp(other).unwrap()
+        self.score.partial_cmp(&other.score).unwrap()
     }
 }
 
@@ -68,7 +68,7 @@ pub fn create_progress(name: &str, delta_refresh: usize, elems: usize) -> indica
 }
 
 fn read_data(path: &str, label: &str) -> anyhow::Result<Array2<f32>> {
-    let file = hdf5::File::open(&path)?;
+    let file = hdf5::File::open(path)?;
     let expected_file = file.dataset(label).unwrap();
     let num_points: usize = expected_file.shape()[0];
     let num_dimensions: usize = expected_file.shape()[1];
@@ -90,17 +90,28 @@ fn get_largest(scores: ArrayView1<f32>, k: usize) -> Array1<usize> {
             }
         }
     });
-    Array1::from(heap.into_sorted_vec().iter().map(|e| e.0.id).collect::<Vec<_>>())
+    Array1::from(
+        heap.into_sorted_vec()
+            .iter()
+            .map(|e| e.0.id)
+            .collect::<Vec<_>>(),
+    )
 }
 
-fn find_gts(data: &Array2<f32>, queries: &Array2<f32>, k: usize)
-            -> (Array2<usize>, Array2<usize>, Array2<usize>) {
+fn find_gts(
+    data: &Array2<f32>,
+    queries: &Array2<f32>,
+    k: usize,
+) -> (Array2<usize>, Array2<usize>, Array2<usize>) {
     let mut gt_euclidean = Array2::<usize>::zeros((queries.nrows(), k));
     let mut gt_cosine = Array2::<usize>::zeros((queries.nrows(), k));
     let mut gt_ip = Array2::<usize>::zeros((queries.nrows(), k));
 
     let norms = Array1::from(
-        data.outer_iter().map(|point| point.norm_l2()).collect::<Vec<_>>());
+        data.outer_iter()
+            .map(|point| point.norm_l2())
+            .collect::<Vec<_>>(),
+    );
 
     let pb = create_progress("Finding ground truth", 1, queries.nrows());
     Zip::from(queries.axis_iter(Axis(0)))
@@ -124,14 +135,18 @@ fn attach_gt(dataset: &InMemoryAnnDataset<f32>, query_set: &mut QuerySet<f32>, t
     let (gt_euclidean, gt_cosine, gt_ip) = find_gts(
         dataset.get_data_points().get_dense().unwrap(),
         query_set.get_points().get_dense().unwrap(),
-        top_k);
-    query_set.add_ground_truth(Metric::InnerProduct, gt_ip)
+        top_k,
+    );
+    query_set
+        .add_ground_truth(Metric::InnerProduct, gt_ip)
         .expect("Failed to add ground-truth to the query set");
 
-    query_set.add_ground_truth(Metric::Cosine, gt_cosine)
+    query_set
+        .add_ground_truth(Metric::Cosine, gt_cosine)
         .expect("Failed to add ground-truth to the query set");
 
-    query_set.add_ground_truth(Metric::Euclidean, gt_euclidean)
+    query_set
+        .add_ground_truth(Metric::Euclidean, gt_euclidean)
         .expect("Failed to add ground-truth to the query set");
 }
 
@@ -140,17 +155,17 @@ fn main() {
 
     let dense = read_data(args.path.as_str(), args.data_points.as_str())
         .expect("Unable to read data points.");
-    let data_points = PointSet::new(Some(dense), None)
-        .expect("Failed to create a point set from data points.");
+    let data_points =
+        PointSet::new(Some(dense), None).expect("Failed to create a point set from data points.");
 
     let mut dataset = InMemoryAnnDataset::create(data_points);
 
     if let Some(train) = args.train_query_points {
         println!("Processing train query points...");
         let dense = read_data(args.path.as_str(), train.as_str())
-            .expect(format!("Failed to read query points labeled '{}'", train).as_str());
+            .unwrap_or_else(|_| panic!("Failed to read query points labeled '{}'", train));
         let query_points = PointSet::new(Some(dense), None)
-            .expect(format!("Failed to create query point set '{}'", train).as_str());
+            .unwrap_or_else(|_| panic!("Failed to create query point set '{}'", train));
         let mut query_set = QuerySet::new(query_points);
 
         attach_gt(&dataset, &mut query_set, args.top_k);
@@ -160,9 +175,9 @@ fn main() {
     if let Some(validation) = args.validation_query_points {
         println!("Processing validation query points...");
         let dense = read_data(args.path.as_str(), validation.as_str())
-            .expect(format!("Failed to read query points labeled '{}'", validation).as_str());
+            .unwrap_or_else(|_| panic!("Failed to read query points labeled '{}'", validation));
         let query_points = PointSet::new(Some(dense), None)
-            .expect(format!("Failed to create query point set '{}'", validation).as_str());
+            .unwrap_or_else(|_| panic!("Failed to create query point set '{}'", validation));
         let mut query_set = QuerySet::new(query_points);
 
         attach_gt(&dataset, &mut query_set, args.top_k);
@@ -172,16 +187,17 @@ fn main() {
     if let Some(test) = args.test_query_points {
         println!("Processing test query points...");
         let dense = read_data(args.path.as_str(), test.as_str())
-            .expect(format!("Failed to read query points labeled '{}'", test).as_str());
+            .unwrap_or_else(|_| panic!("Failed to read query points labeled '{}'", test));
         let query_points = PointSet::new(Some(dense), None)
-            .expect(format!("Failed to create query point set '{}'", test).as_str());
+            .unwrap_or_else(|_| panic!("Failed to create query point set '{}'", test));
         let mut query_set = QuerySet::new(query_points);
 
         attach_gt(&dataset, &mut query_set, args.top_k);
         dataset.add_test_query_set(query_set);
     }
 
-    dataset.write(args.output.as_str())
+    dataset
+        .write(args.output.as_str())
         .expect("Failed to write the dataset into output file.");
     println!("Dataset created and serialized:\n{}", dataset);
 }

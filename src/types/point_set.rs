@@ -1,9 +1,9 @@
-use std::fmt::{Display, Formatter};
-use ndarray::{Array2, Axis};
-use sprs::CsMat;
+use crate::Hdf5Serialization;
 use anyhow::{anyhow, Result};
 use hdf5::{Group, H5Type};
-use crate::Hdf5Serialization;
+use ndarray::{Array2, Axis};
+use sprs::CsMat;
+use std::fmt::{Display, Formatter};
 
 const DENSE: &str = "dense";
 const SPARSE: &str = "sparse";
@@ -25,7 +25,10 @@ impl<DataType: Clone> PointSet<DataType> {
     ///
     /// Returns an error if both `dense` and `sparse` vector sets are empty, or if they are both
     /// provided, the number of rows of the `dense` and `sparse` sets do not match.
-    pub fn new(dense: Option<Array2<DataType>>, sparse: Option<CsMat<DataType>>) -> Result<PointSet<DataType>> {
+    pub fn new(
+        dense: Option<Array2<DataType>>,
+        sparse: Option<CsMat<DataType>>,
+    ) -> Result<PointSet<DataType>> {
         if dense.is_none() && sparse.is_none() {
             return Err(anyhow!("Both dense and sparse sets are empty."));
         }
@@ -33,7 +36,11 @@ impl<DataType: Clone> PointSet<DataType> {
             let dense = dense.as_ref().unwrap();
             let sparse = sparse.as_ref().unwrap();
             if dense.nrows() != sparse.rows() {
-                return Err(anyhow!("There are {} dense vectors but {} sparse vectors!", dense.nrows(), sparse.rows()));
+                return Err(anyhow!(
+                    "There are {} dense vectors but {} sparse vectors!",
+                    dense.nrows(),
+                    sparse.rows()
+                ));
             }
         }
         Ok(PointSet { dense, sparse })
@@ -72,36 +79,46 @@ impl<DataType: Clone> PointSet<DataType> {
     }
 
     /// Returns the dense sub-vectors.
-    pub fn get_dense(&self) -> Option<&Array2<DataType>> { self.dense.as_ref() }
+    pub fn get_dense(&self) -> Option<&Array2<DataType>> {
+        self.dense.as_ref()
+    }
 
     /// Returns the sparse sub-vectors.
-    pub fn get_sparse(&self) -> Option<&CsMat<DataType>> { self.sparse.as_ref() }
+    pub fn get_sparse(&self) -> Option<&CsMat<DataType>> {
+        self.sparse.as_ref()
+    }
 
     /// Selects a subset of points with the given ids.
     pub fn select(&self, ids: &[usize]) -> PointSet<DataType> {
-        let dense = match self.dense.as_ref() {
-            None => { None }
-            Some(dense) => { Some(dense.select(Axis(0), ids)) }
-        };
+        let dense = self.dense.as_ref().map(|dense| dense.select(Axis(0), ids));
 
         let sparse = match self.sparse.as_ref() {
-            None => { None }
+            None => None,
             Some(sparse) => {
-                let mut nnzs = ids.iter().map(|&index| {
-                    sparse.indptr().index(index + 1) - sparse.indptr().index(index)
-                }).collect::<Vec<_>>();
+                let mut nnzs = ids
+                    .iter()
+                    .map(|&index| sparse.indptr().index(index + 1) - sparse.indptr().index(index))
+                    .collect::<Vec<_>>();
 
-                let indices = ids.iter().enumerate().map(|(i, &index)| {
-                    let begin = sparse.indptr().index(index);
-                    let end = begin + nnzs[i];
-                    sparse.indices()[begin..end].to_vec()
-                }).flatten().collect::<Vec<_>>();
+                let indices = ids
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(i, &index)| {
+                        let begin = sparse.indptr().index(index);
+                        let end = begin + nnzs[i];
+                        sparse.indices()[begin..end].to_vec()
+                    })
+                    .collect::<Vec<_>>();
 
-                let data = ids.iter().enumerate().map(|(i, &index)| {
-                    let begin = sparse.indptr().index(index);
-                    let end = begin + nnzs[i];
-                    sparse.data()[begin..end].to_vec()
-                }).flatten().collect::<Vec<_>>();
+                let data = ids
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(i, &index)| {
+                        let begin = sparse.indptr().index(index);
+                        let end = begin + nnzs[i];
+                        sparse.data()[begin..end].to_vec()
+                    })
+                    .collect::<Vec<_>>();
 
                 let mut acc = 0_usize;
                 for x in &mut nnzs {
@@ -110,7 +127,12 @@ impl<DataType: Clone> PointSet<DataType> {
                 }
                 nnzs.insert(0, 0);
 
-                Some(CsMat::new((ids.len(), sparse.shape().1), nnzs, indices, data))
+                Some(CsMat::new(
+                    (ids.len(), sparse.shape().1),
+                    nnzs,
+                    indices,
+                    data,
+                ))
             }
         };
 
@@ -123,29 +145,32 @@ impl<DataType: Clone + H5Type> Hdf5Serialization for PointSet<DataType> {
 
     fn serialize(&self, group: &mut Group) -> Result<()> {
         if let Some(dense) = self.dense.as_ref() {
-            let dataset = group.new_dataset::<DataType>()
+            let dataset = group
+                .new_dataset::<DataType>()
                 .shape(dense.shape())
                 .create(format!("{}-{}", Self::label(), DENSE).as_str())?;
             dataset.write(dense)?;
         }
 
         if let Some(sparse) = self.sparse.as_ref() {
-            let group = group.create_group(
-                format!("{}-{}", Self::label(), SPARSE).as_str())?;
+            let group = group.create_group(format!("{}-{}", Self::label(), SPARSE).as_str())?;
             let shape = group.new_attr::<usize>().shape(2).create(SPARSE_SHAPE)?;
             shape.write(&[sparse.shape().0, sparse.shape().1])?;
 
-            let indptr = group.new_dataset::<usize>()
+            let indptr = group
+                .new_dataset::<usize>()
                 .shape(sparse.indptr().len())
                 .create(SPARSE_INDPTR)?;
             indptr.write(sparse.indptr().as_slice().unwrap())?;
 
-            let indices = group.new_dataset::<usize>()
+            let indices = group
+                .new_dataset::<usize>()
                 .shape(sparse.indices().len())
                 .create(SPARSE_INDICES)?;
             indices.write(sparse.indices())?;
 
-            let data = group.new_dataset::<DataType>()
+            let data = group
+                .new_dataset::<DataType>()
                 .shape(sparse.data().len())
                 .create(SPARSE_DATA)?;
             data.write(sparse.data())?;
@@ -154,33 +179,38 @@ impl<DataType: Clone + H5Type> Hdf5Serialization for PointSet<DataType> {
     }
 
     fn deserialize(group: &Group) -> Result<Self::Object> {
-        let dataset = group.dataset(
-            format!("{}-{}", Self::label(), DENSE).as_str());
+        let dataset = group.dataset(format!("{}-{}", Self::label(), DENSE).as_str());
         let dense = match dataset {
             Ok(dataset) => {
                 let vectors: Vec<DataType> = dataset.read_raw::<DataType>()?;
                 let num_dimensions: usize = dataset.shape()[1];
                 let vector_count = vectors.len() / num_dimensions;
-                Some(Array2::from_shape_vec((vector_count, num_dimensions), vectors)?)
+                Some(Array2::from_shape_vec(
+                    (vector_count, num_dimensions),
+                    vectors,
+                )?)
             }
-            Err(_) => { None }
+            Err(_) => None,
         };
 
-        let sparse_group = group.group(
-            format!("{}-{}", Self::label(), SPARSE).as_str());
+        let sparse_group = group.group(format!("{}-{}", Self::label(), SPARSE).as_str());
         let sparse = match sparse_group {
             Ok(sparse_group) => {
                 let shape = sparse_group.attr(SPARSE_SHAPE)?.read_raw::<usize>()?;
                 if shape.len() != 2 {
-                    return Err(anyhow!("Corrupt shape for sparse dataset '{}'", group.name()));
+                    return Err(anyhow!(
+                        "Corrupt shape for sparse dataset '{}'",
+                        group.name()
+                    ));
                 }
 
                 let indptr = sparse_group.dataset(SPARSE_INDPTR)?.read_raw::<usize>()?;
                 let indices = sparse_group.dataset(SPARSE_INDICES)?.read_raw::<usize>()?;
-                let data: Vec<DataType> = sparse_group.dataset(SPARSE_DATA)?.read_raw::<DataType>()?;
+                let data: Vec<DataType> =
+                    sparse_group.dataset(SPARSE_DATA)?.read_raw::<DataType>()?;
                 Some(CsMat::new((shape[0], shape[1]), indptr, indices, data))
             }
-            Err(_) => { None }
+            Err(_) => None,
         };
 
         Ok(PointSet { dense, sparse })
@@ -194,14 +224,14 @@ impl<DataType: Clone + H5Type> Hdf5Serialization for PointSet<DataType> {
 impl<DataType: Clone + H5Type> Display for PointSet<DataType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let dense = match self.dense.as_ref() {
-            None => { "is empty".to_string() }
+            None => "is empty".to_string(),
             Some(dense) => {
                 format!("has shape [{}, {}]", dense.shape()[0], dense.shape()[1])
             }
         };
 
         let sparse = match self.sparse.as_ref() {
-            None => { "is empty".to_string() }
+            None => "is empty".to_string(),
             Some(sparse) => {
                 format!("has shape [{}, {}]", sparse.rows(), sparse.cols())
             }
@@ -213,12 +243,12 @@ impl<DataType: Clone + H5Type> Display for PointSet<DataType> {
 
 #[cfg(test)]
 mod tests {
+    use crate::types::point_set::PointSet;
+    use crate::Hdf5Serialization;
     use hdf5::File;
     use ndarray::{Array2, Axis};
     use sprs::{CsMat, TriMat};
     use tempdir::TempDir;
-    use crate::Hdf5Serialization;
-    use crate::types::point_set::PointSet;
 
     #[test]
     fn test_new() {
@@ -263,7 +293,10 @@ mod tests {
         assert_eq!(subset.get_sparse().unwrap(), &sparse_subset);
 
         let subset = point_set.select(&[0, 3, 9]);
-        assert_eq!(subset.get_dense().unwrap(), dense.select(Axis(0), &[0, 3, 9]));
+        assert_eq!(
+            subset.get_dense().unwrap(),
+            dense.select(Axis(0), &[0, 3, 9])
+        );
 
         let mut sparse_subset = TriMat::new((3, 4));
         sparse_subset.add_triplet(0, 0, 3.0_f32);
