@@ -20,21 +20,21 @@ impl GroundTruth {
 
     /// Computes recall given a retrieved set.
     ///
-    /// Returns an error if the number of queries does not match between the retrieved `top_k` set
+    /// Returns an error if the number of queries does not match between `retrieved_set`
     /// and the exact neighbor set stored in this object.
-    pub fn mean_recall(&self, top_k: &[Vec<usize>]) -> Result<f32> {
-        if top_k.len() != self.0.nrows() {
+    pub fn mean_recall(&self, retrieved_set: &[Vec<usize>]) -> Result<f32> {
+        if retrieved_set.len() != self.0.nrows() {
             return Err(anyhow!(
                 "Retrieved set has {} queries, but expected {} queries",
-                top_k.len(), self.0.nrows()));
+                retrieved_set.len(), self.0.nrows()));
         }
 
-        if top_k.is_empty() {
+        if retrieved_set.is_empty() {
             return Ok(1_f32);
         }
-        let k = min(top_k[0].len(), self.0.ncols());
+        let k = min(retrieved_set[0].len(), self.0.ncols());
 
-        let recall = top_k.iter()
+        let recall = retrieved_set.iter()
             .enumerate()
             .map(|(i, set)| {
                 let intersection_len =
@@ -42,7 +42,7 @@ impl GroundTruth {
                         .intersection_len(&RoaringBitmap::from_iter(set.iter().map(|x| *x as u32).take(k))) as f64;
                 intersection_len / k as f64
             }).sum::<f64>();
-        Ok(recall as f32 / top_k.len() as f32)
+        Ok(recall as f32 / retrieved_set.len() as f32)
     }
 }
 

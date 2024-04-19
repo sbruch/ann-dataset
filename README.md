@@ -28,7 +28,7 @@ let data_points: &PointSet<_> = dataset.get_data_points();
 let test: &QuerySet<_> = dataset.get_test_query_set()
     .expect("Failed to load test query set.");
 let test_queries: &PointSet<_> = test.get_points();
-let gt: &GroundTruth = test.get_ground_truth(Metric::InnerProduct)
+let gt: &GroundTruth = test.get_ground_truth(&Metric::InnerProduct)
     .expect("Failed to load ground truth for InnerProduct search.");
 
 // Compute recall, assuming `retrieved_set` is &[Vec<usize>],
