@@ -1,12 +1,12 @@
+use crate::types::ground_truth::GroundTruth;
+use crate::types::Metric;
+use crate::{Hdf5Serialization, PointSet};
 use anyhow::{anyhow, Result};
+use hdf5::{Group, H5Type};
+use ndarray::Array2;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-use hdf5::{Group, H5Type};
-use ndarray::Array2;
-use crate::{Hdf5Serialization, PointSet};
-use crate::types::ground_truth::GroundTruth;
-use crate::types::Metric;
 
 const QUERIES: &str = "queries";
 const GROUND_TRUTH: &str = "gt";
@@ -29,7 +29,9 @@ impl<DataType: Clone> QuerySet<DataType> {
     }
 
     /// Returns the set of query points.
-    pub fn get_points(&self) -> &PointSet<DataType> { &self.points }
+    pub fn get_points(&self) -> &PointSet<DataType> {
+        &self.points
+    }
 
     /// Adds a set of exact nearest neighbors to the query set, as solutions to ANN with the given
     /// metric.
@@ -41,7 +43,9 @@ impl<DataType: Clone> QuerySet<DataType> {
             return Err(anyhow!(
                 "Number of rows in `neighbors` ({}) must match the \
                 number of query points in the set {}.",
-                neighbors.nrows(), self.points.num_points()));
+                neighbors.nrows(),
+                self.points.num_points()
+            ));
         }
         self.neighbors.insert(metric, GroundTruth::new(neighbors));
         Ok(())
@@ -53,7 +57,10 @@ impl<DataType: Clone> QuerySet<DataType> {
         if let Some(gt) = self.neighbors.get(metric) {
             return Ok(gt);
         }
-        Err(anyhow!("No solution to ANN with {:?} was provided.", metric))
+        Err(anyhow!(
+            "No solution to ANN with {:?} was provided.",
+            metric
+        ))
     }
 }
 
@@ -82,17 +89,14 @@ impl<DataType: Clone + H5Type> Hdf5Serialization for QuerySet<DataType> {
         let gt_group = group.group(GROUND_TRUTH)?;
         gt_group.groups()?.iter().try_for_each(|grp| {
             let name = grp.name();
-            let name = name.split("/").last().unwrap();
+            let name = name.split('/').last().unwrap();
             let metric = Metric::from_str(name)?;
-            let gt = GroundTruth::deserialize(&grp)?;
+            let gt = GroundTruth::deserialize(grp)?;
             neighbors.insert(metric, gt);
             anyhow::Ok(())
         })?;
 
-        Ok(QuerySet {
-            points,
-            neighbors,
-        })
+        Ok(QuerySet { points, neighbors })
     }
 
     fn label() -> String {
@@ -102,21 +106,26 @@ impl<DataType: Clone + H5Type> Hdf5Serialization for QuerySet<DataType> {
 
 impl<DataType: Clone + H5Type> Display for QuerySet<DataType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Query points: {}\nGround-truths: {}",
-               self.points,
-               self.neighbors.iter()
-                   .map(|entry| format!("{}: {}", entry.0, entry.1))
-                   .collect::<Vec<_>>().join("; "))
+        write!(
+            f,
+            "Query points: {}\nGround-truths: {}",
+            self.points,
+            self.neighbors
+                .iter()
+                .map(|entry| format!("{}: {}", entry.0, entry.1))
+                .collect::<Vec<_>>()
+                .join("; ")
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::types::Metric::{Cosine, Euclidean, InnerProduct};
+    use crate::{Hdf5Serialization, PointSet, QuerySet};
     use hdf5::File;
     use ndarray::Array2;
     use tempdir::TempDir;
-    use crate::{Hdf5Serialization, PointSet, QuerySet};
-    use crate::types::Metric::{Cosine, Euclidean, InnerProduct};
 
     #[test]
     fn test_new() {
@@ -124,18 +133,32 @@ mod tests {
         let queries = PointSet::<f64>::new(Some(dense), None).unwrap();
         let mut query_set = QuerySet::new(queries);
 
-        assert!(query_set.add_ground_truth(InnerProduct, Array2::<usize>::eye(3)).is_err());
+        assert!(query_set
+            .add_ground_truth(InnerProduct, Array2::<usize>::eye(3))
+            .is_err());
 
-        assert!(query_set.add_ground_truth(
-            InnerProduct, Array2::<usize>::zeros((5, 1))).is_ok());
-        assert!(query_set.add_ground_truth(
-            Euclidean, Array2::<usize>::ones((5, 1))).is_ok());
+        assert!(query_set
+            .add_ground_truth(InnerProduct, Array2::<usize>::zeros((5, 1)))
+            .is_ok());
+        assert!(query_set
+            .add_ground_truth(Euclidean, Array2::<usize>::ones((5, 1)))
+            .is_ok());
 
         assert!(query_set.get_ground_truth(&Cosine).is_err());
-        assert_eq!(query_set.get_ground_truth(&Euclidean).unwrap().get_neighbors(),
-                   Array2::<usize>::ones((5, 1)));
-        assert_eq!(query_set.get_ground_truth(&InnerProduct).unwrap().get_neighbors(),
-                   Array2::<usize>::zeros((5, 1)));
+        assert_eq!(
+            query_set
+                .get_ground_truth(&Euclidean)
+                .unwrap()
+                .get_neighbors(),
+            Array2::<usize>::ones((5, 1))
+        );
+        assert_eq!(
+            query_set
+                .get_ground_truth(&InnerProduct)
+                .unwrap()
+                .get_neighbors(),
+            Array2::<usize>::zeros((5, 1))
+        );
     }
 
     #[test]
@@ -144,10 +167,12 @@ mod tests {
         let queries = PointSet::<f64>::new(Some(dense), None).unwrap();
         let mut query_set = QuerySet::new(queries);
 
-        assert!(query_set.add_ground_truth(
-            InnerProduct, Array2::<usize>::zeros((5, 1))).is_ok());
-        assert!(query_set.add_ground_truth(
-            Euclidean, Array2::<usize>::ones((5, 1))).is_ok());
+        assert!(query_set
+            .add_ground_truth(InnerProduct, Array2::<usize>::zeros((5, 1)))
+            .is_ok());
+        assert!(query_set
+            .add_ground_truth(Euclidean, Array2::<usize>::ones((5, 1)))
+            .is_ok());
 
         let dir = TempDir::new("pointset_test_hdf5").unwrap();
         let path = dir.path().join("ann-dataset.hdf5");

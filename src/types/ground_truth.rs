@@ -1,10 +1,10 @@
-use std::cmp::min;
-use std::fmt::{Display, Formatter};
-use ndarray::{Array2, ArrayView2};
-use roaring::RoaringBitmap;
+use crate::Hdf5Serialization;
 use anyhow::{anyhow, Result};
 use hdf5::Group;
-use crate::Hdf5Serialization;
+use ndarray::{Array2, ArrayView2};
+use roaring::RoaringBitmap;
+use std::cmp::min;
+use std::fmt::{Display, Formatter};
 
 /// Defines the exact nearest neighbors.
 #[derive(Eq, PartialEq, Default, Debug, Clone)]
@@ -16,7 +16,9 @@ impl GroundTruth {
     }
 
     /// Returns the set of neighbors.
-    pub fn get_neighbors(&self) -> ArrayView2<usize> { self.0.view() }
+    pub fn get_neighbors(&self) -> ArrayView2<usize> {
+        self.0.view()
+    }
 
     /// Computes recall given a retrieved set.
     ///
@@ -26,7 +28,9 @@ impl GroundTruth {
         if retrieved_set.len() != self.0.nrows() {
             return Err(anyhow!(
                 "Retrieved set has {} queries, but expected {} queries",
-                retrieved_set.len(), self.0.nrows()));
+                retrieved_set.len(),
+                self.0.nrows()
+            ));
         }
 
         if retrieved_set.is_empty() {
@@ -34,14 +38,18 @@ impl GroundTruth {
         }
         let k = min(retrieved_set[0].len(), self.0.ncols());
 
-        let recall = retrieved_set.iter()
+        let recall = retrieved_set
+            .iter()
             .enumerate()
             .map(|(i, set)| {
                 let intersection_len =
                     RoaringBitmap::from_iter(self.0.row(i).iter().map(|x| *x as u32).take(k))
-                        .intersection_len(&RoaringBitmap::from_iter(set.iter().map(|x| *x as u32).take(k))) as f64;
+                        .intersection_len(&RoaringBitmap::from_iter(
+                            set.iter().map(|x| *x as u32).take(k),
+                        )) as f64;
                 intersection_len / k as f64
-            }).sum::<f64>();
+            })
+            .sum::<f64>();
         Ok(recall as f32 / retrieved_set.len() as f32)
     }
 }
@@ -50,7 +58,8 @@ impl Hdf5Serialization for GroundTruth {
     type Object = GroundTruth;
 
     fn serialize(&self, group: &mut Group) -> Result<()> {
-        let dataset = group.new_dataset::<usize>()
+        let dataset = group
+            .new_dataset::<usize>()
             .shape(self.0.shape())
             .create(Self::label().as_str())?;
         dataset.write(self.0.view())?;
@@ -81,36 +90,32 @@ impl Display for GroundTruth {
 
 #[cfg(test)]
 mod tests {
+    use crate::types::ground_truth::GroundTruth;
+    use crate::Hdf5Serialization;
     use approx_eq::assert_approx_eq;
     use hdf5::File;
     use ndarray::Array2;
     use tempdir::TempDir;
-    use crate::Hdf5Serialization;
-    use crate::types::ground_truth::GroundTruth;
 
     #[test]
     fn test_recall() {
         let gt = GroundTruth::new(
-            Array2::from_shape_vec(
-                (3, 3),
-                vec![1_usize, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap());
-        assert!(gt.mean_recall(&vec![]).is_err());
+            Array2::from_shape_vec((3, 3), vec![1_usize, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap(),
+        );
+        assert!(gt.mean_recall(&[]).is_err());
 
-        let recall = gt.mean_recall(
-            &vec![vec![1_usize], vec![5], vec![1]]);
+        let recall = gt.mean_recall(&[vec![1_usize], vec![5], vec![1]]);
         assert_approx_eq!(recall.unwrap().into(), 0.333, 0.01);
 
-        let recall = gt.mean_recall(
-            &vec![vec![1_usize, 2], vec![5, 6], vec![1, 8]]);
+        let recall = gt.mean_recall(&[vec![1_usize, 2], vec![5, 6], vec![1, 8]]);
         assert_approx_eq!(recall.unwrap().into(), 0.666, 0.01);
     }
 
     #[test]
     fn test_hdf5() {
         let gt = GroundTruth::new(
-            Array2::from_shape_vec(
-                (3, 3),
-                vec![1_usize, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap());
+            Array2::from_shape_vec((3, 3), vec![1_usize, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap(),
+        );
 
         let dir = TempDir::new("gt_test_hdf5").unwrap();
         let path = dir.path().join("ann-dataset.hdf5");
