@@ -10,6 +10,9 @@ pub trait AnnDataset<DataType: Clone> {
     /// Returns all data points.
     fn get_data_points(&self) -> &PointSet<DataType>;
 
+    /// Selects a subset of data points.
+    fn select(&self, ids: &[usize]) -> PointSet<DataType>;
+
     /// Iterates over chunks of data points.
     fn iter<'a>(&'a self) -> impl Iterator<Item = &'a PointSet<DataType>>
     where
