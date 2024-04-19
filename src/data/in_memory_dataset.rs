@@ -51,6 +51,10 @@ impl<DataType: Clone + H5Type> AnnDataset<DataType> for InMemoryAnnDataset<DataT
         &self.data_points
     }
 
+    fn select(&self, ids: &[usize]) -> PointSet<DataType> {
+        self.data_points.select(ids)
+    }
+
     fn iter<'a>(&'a self) -> impl Iterator<Item = &'a PointSet<DataType>>
     where
         DataType: 'a,
