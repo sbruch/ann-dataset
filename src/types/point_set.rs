@@ -271,7 +271,7 @@ impl<DataType: Clone + H5Type> Hdf5Serialization for PointSet<DataType> {
     }
 }
 
-impl<DataType: Clone + H5Type> Display for PointSet<DataType> {
+impl<DataType: Clone> Display for PointSet<DataType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let dense = match self.dense.as_ref() {
             None => "is empty".to_string(),

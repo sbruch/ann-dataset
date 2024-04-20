@@ -104,7 +104,7 @@ impl<DataType: Clone + H5Type> Hdf5Serialization for QuerySet<DataType> {
     }
 }
 
-impl<DataType: Clone + H5Type> Display for QuerySet<DataType> {
+impl<DataType: Clone> Display for QuerySet<DataType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,

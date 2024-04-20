@@ -11,12 +11,12 @@ const QUERY_SETS: &str = "query_sets";
 
 /// An ANN dataset.
 #[derive(Eq, PartialEq, Debug, Clone)]
-pub struct InMemoryAnnDataset<DataType: Clone + H5Type> {
+pub struct InMemoryAnnDataset<DataType: Clone> {
     data_points: PointSet<DataType>,
     query_sets: HashMap<String, QuerySet<DataType>>,
 }
 
-impl<DataType: Clone + H5Type> InMemoryAnnDataset<DataType> {
+impl<DataType: Clone> InMemoryAnnDataset<DataType> {
     /// Creates an `AnnDataset` object.
     ///
     /// Here is a simple example:
@@ -46,7 +46,7 @@ impl<DataType: Clone + H5Type> InMemoryAnnDataset<DataType> {
     }
 }
 
-impl<DataType: Clone + H5Type> AnnDataset<DataType> for InMemoryAnnDataset<DataType> {
+impl<DataType: Clone> AnnDataset<DataType> for InMemoryAnnDataset<DataType> {
     fn get_data_points(&self) -> &PointSet<DataType> {
         &self.data_points
     }
@@ -153,7 +153,7 @@ impl<DataType: Clone + H5Type> Hdf5File for InMemoryAnnDataset<DataType> {
     }
 }
 
-impl<DataType: Clone + H5Type> fmt::Display for InMemoryAnnDataset<DataType> {
+impl<DataType: Clone> fmt::Display for InMemoryAnnDataset<DataType> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
