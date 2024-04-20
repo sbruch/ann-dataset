@@ -1,9 +1,11 @@
 use crate::Hdf5Serialization;
 use anyhow::{anyhow, Result};
 use hdf5::{Group, H5Type};
-use ndarray::{Array2, Axis};
+use linfa_linalg::norm::Norm;
+use ndarray::{Array1, Array2, Axis, Zip};
 use sprs::CsMat;
 use std::fmt::{Display, Formatter};
+use std::iter::zip;
 
 const DENSE: &str = "dense";
 const SPARSE: &str = "sparse";
@@ -140,6 +142,54 @@ impl<DataType: Clone> PointSet<DataType> {
     }
 }
 
+impl PointSet<f32> {
+    /// Returns the L2 norm of the points.
+    pub fn l2_norm(&self) -> Array1<f32> {
+        let dense_l2_squared = if let Some(dense) = self.dense.as_ref() {
+            Array1::from(
+                dense
+                    .axis_iter(Axis(0))
+                    .map(|point| point.norm_l2().powi(2))
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            Array1::<f32>::zeros(self.num_points())
+        };
+
+        let sparse_l2_squared = if let Some(sparse) = self.sparse.as_ref() {
+            Array1::from(
+                sparse
+                    .outer_iterator()
+                    .map(|point| point.l2_norm().powi(2))
+                    .collect::<Vec<_>>(),
+            )
+        } else {
+            Array1::<f32>::zeros(self.num_points())
+        };
+
+        let mut l2_norm = dense_l2_squared + sparse_l2_squared;
+        l2_norm.mapv_inplace(|v| v.sqrt());
+        l2_norm
+    }
+
+    /// Normalizes all points by their L2 norm and modifies the `PointSet` in place.
+    pub fn l2_normalize_inplace(&mut self) {
+        let norms = self.l2_norm();
+        if let Some(dense) = self.dense.as_mut() {
+            Zip::from(norms.view())
+                .and(dense.axis_iter_mut(Axis(0)))
+                .par_for_each(|&norm, mut point| {
+                    point.mapv_inplace(|x| x / norm);
+                });
+        }
+        if let Some(sparse) = self.sparse.as_mut() {
+            zip(norms.iter(), sparse.outer_iterator_mut()).for_each(|(&norm, mut point)| {
+                point.map_inplace(|&x| x / norm);
+            });
+        }
+    }
+}
+
 impl<DataType: Clone + H5Type> Hdf5Serialization for PointSet<DataType> {
     type Object = PointSet<DataType>;
 
@@ -245,9 +295,11 @@ impl<DataType: Clone + H5Type> Display for PointSet<DataType> {
 mod tests {
     use crate::types::point_set::PointSet;
     use crate::Hdf5Serialization;
+    use approx_eq::assert_approx_eq;
     use hdf5::File;
     use ndarray::{Array2, Axis};
     use sprs::{CsMat, TriMat};
+    use std::iter::zip;
     use tempdir::TempDir;
 
     #[test]
@@ -395,5 +447,72 @@ mod tests {
         assert!(point_set.serialize(&mut group).is_ok());
         let point_set_copy = PointSet::<f32>::deserialize(&group).unwrap();
         assert_eq!(&point_set, &point_set_copy);
+    }
+
+    #[test]
+    fn test_l2_norm() {
+        let dense = Array2::<f32>::eye(10);
+
+        let mut sparse = TriMat::new((10, 4));
+        sparse.add_triplet(0, 0, 3.0_f32);
+        sparse.add_triplet(1, 2, 2.0);
+        sparse.add_triplet(3, 0, -2.0);
+        let sparse: CsMat<_> = sparse.to_csr();
+
+        let point_set = PointSet::new(Some(dense.clone()), None).unwrap();
+        zip(vec![1.0; 10], point_set.l2_norm().to_vec()).for_each(|e| {
+            assert_approx_eq!(e.0 as f64, e.1 as f64, 0.01);
+        });
+
+        let point_set = PointSet::new(Some(dense.clone()), Some(sparse.clone())).unwrap();
+        zip(
+            vec![3.16, 2.23, 1.0, 2.23, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+            point_set.l2_norm().to_vec(),
+        )
+        .for_each(|e| {
+            assert_approx_eq!(e.0, e.1 as f64, 0.01);
+        });
+
+        let point_set = PointSet::new(None, Some(sparse.clone())).unwrap();
+        zip(
+            vec![3.0, 2.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            point_set.l2_norm().to_vec(),
+        )
+        .for_each(|e| {
+            assert_approx_eq!(e.0, e.1 as f64, 0.01);
+        });
+    }
+
+    #[test]
+    fn test_l2_normalize_inplace() {
+        let dense = Array2::<f32>::eye(10);
+
+        let mut sparse = TriMat::new((10, 4));
+        sparse.add_triplet(0, 0, 3.0_f32);
+        sparse.add_triplet(1, 2, 2.0);
+        sparse.add_triplet(3, 0, -2.0);
+        let sparse: CsMat<_> = sparse.to_csr();
+
+        let mut point_set = PointSet::new(Some(dense.clone()), None).unwrap();
+        point_set.l2_normalize_inplace();
+        zip(vec![1.0; 10], point_set.l2_norm().to_vec()).for_each(|e| {
+            assert_approx_eq!(e.0 as f64, e.1 as f64, 0.01);
+        });
+
+        let mut point_set = PointSet::new(Some(dense.clone()), Some(sparse.clone())).unwrap();
+        point_set.l2_normalize_inplace();
+        zip(vec![1.0; 10], point_set.l2_norm().to_vec()).for_each(|e| {
+            assert_approx_eq!(e.0, e.1 as f64, 0.01);
+        });
+
+        let mut point_set = PointSet::new(None, Some(sparse.clone())).unwrap();
+        point_set.l2_normalize_inplace();
+        zip(
+            vec![1.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            point_set.l2_norm().to_vec(),
+        )
+        .for_each(|e| {
+            assert_approx_eq!(e.0, e.1 as f64, 0.01);
+        });
     }
 }
