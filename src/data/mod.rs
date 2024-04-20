@@ -10,6 +10,9 @@ pub trait AnnDataset<DataType: Clone> {
     /// Returns all data points.
     fn get_data_points(&self) -> &PointSet<DataType>;
 
+    /// Returns a mutable view of all data points.
+    fn get_data_points_mut(&mut self) -> &mut PointSet<DataType>;
+
     /// Selects a subset of data points.
     fn select(&self, ids: &[usize]) -> PointSet<DataType>;
 
@@ -44,7 +47,7 @@ pub trait AnnDataset<DataType: Clone> {
         self.get_query_set(TRAIN_QUERY_SET)
     }
 
-    /// Convenience method that returns the "train" `QuerySet`.
+    /// Convenience method that returns the "validation" `QuerySet`.
     fn get_validation_query_set(&self) -> anyhow::Result<&QuerySet<DataType>> {
         self.get_query_set(VALIDATION_QUERY_SET)
     }
