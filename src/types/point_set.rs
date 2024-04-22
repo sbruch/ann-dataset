@@ -461,7 +461,7 @@ mod tests {
 
         let point_set = PointSet::new(Some(dense.clone()), None).unwrap();
         zip(vec![1.0; 10], point_set.l2_norm().to_vec()).for_each(|e| {
-            assert_approx_eq!(e.0 as f64, e.1 as f64, 0.01);
+            assert_approx_eq!(e.0, e.1 as f64, 0.01);
         });
 
         let point_set = PointSet::new(Some(dense.clone()), Some(sparse.clone())).unwrap();
@@ -496,7 +496,7 @@ mod tests {
         let mut point_set = PointSet::new(Some(dense.clone()), None).unwrap();
         point_set.l2_normalize_inplace();
         zip(vec![1.0; 10], point_set.l2_norm().to_vec()).for_each(|e| {
-            assert_approx_eq!(e.0 as f64, e.1 as f64, 0.01);
+            assert_approx_eq!(e.0, e.1 as f64, 0.01);
         });
 
         let mut point_set = PointSet::new(Some(dense.clone()), Some(sparse.clone())).unwrap();
