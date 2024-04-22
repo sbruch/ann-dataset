@@ -59,13 +59,6 @@ impl<DataType: Clone> AnnDataset<DataType> for InMemoryAnnDataset<DataType> {
         self.data_points.select(ids)
     }
 
-    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a PointSet<DataType>>
-    where
-        DataType: 'a,
-    {
-        [&self.data_points].into_iter()
-    }
-
     /// Adds a new query set to the dataset with the given `label` or replaces one if it already
     /// exists.
     ///
