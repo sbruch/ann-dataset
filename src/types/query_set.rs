@@ -4,6 +4,7 @@ use crate::{Hdf5Serialization, PointSet};
 use anyhow::{anyhow, Result};
 use hdf5::{Group, H5Type};
 use ndarray::Array2;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
@@ -13,7 +14,7 @@ const GROUND_TRUTH: &str = "gt";
 
 /// A set of query points (dense, sparse, or both) and their exact nearest neighbors for various
 /// metrics.
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct QuerySet<DataType: Clone> {
     points: PointSet<DataType>,
     neighbors: HashMap<Metric, GroundTruth>,
@@ -67,23 +68,23 @@ impl<DataType: Clone> QuerySet<DataType> {
 impl<DataType: Clone + H5Type> Hdf5Serialization for QuerySet<DataType> {
     type Object = QuerySet<DataType>;
 
-    fn serialize(&self, group: &mut Group) -> Result<()> {
+    fn add_to(&self, group: &mut Group) -> Result<()> {
         let mut query_group = group.create_group(QUERIES)?;
-        self.points.serialize(&mut query_group)?;
+        self.points.add_to(&mut query_group)?;
 
         let gt_group = group.create_group(GROUND_TRUTH)?;
         self.neighbors.iter().try_for_each(|entry| {
             let mut grp = gt_group.create_group(entry.0.to_string().as_str())?;
-            entry.1.serialize(&mut grp)?;
+            entry.1.add_to(&mut grp)?;
             anyhow::Ok(())
         })?;
 
         Ok(())
     }
 
-    fn deserialize(group: &Group) -> Result<Self::Object> {
+    fn read_from(group: &Group) -> Result<Self::Object> {
         let query_group = group.group(QUERIES)?;
-        let points = PointSet::<DataType>::deserialize(&query_group)?;
+        let points = PointSet::<DataType>::read_from(&query_group)?;
 
         let mut neighbors: HashMap<Metric, GroundTruth> = HashMap::new();
         let gt_group = group.group(GROUND_TRUTH)?;
@@ -91,7 +92,7 @@ impl<DataType: Clone + H5Type> Hdf5Serialization for QuerySet<DataType> {
             let name = grp.name();
             let name = name.split('/').last().unwrap();
             let metric = Metric::from_str(name)?;
-            let gt = GroundTruth::deserialize(grp)?;
+            let gt = GroundTruth::read_from(grp)?;
             neighbors.insert(metric, gt);
             anyhow::Ok(())
         })?;
@@ -180,13 +181,13 @@ mod tests {
         let hdf5 = File::create(path).unwrap();
 
         let mut group = hdf5.group("/").unwrap();
-        assert!(query_set.serialize(&mut group).is_ok());
-        let query_set_copy = QuerySet::<f64>::deserialize(&group).unwrap();
+        assert!(query_set.add_to(&mut group).is_ok());
+        let query_set_copy = QuerySet::<f64>::read_from(&group).unwrap();
         assert_eq!(&query_set, &query_set_copy);
 
         let mut group = group.create_group("nested").unwrap();
-        assert!(query_set.serialize(&mut group).is_ok());
-        let query_set_copy = QuerySet::<f64>::deserialize(&group).unwrap();
+        assert!(query_set.add_to(&mut group).is_ok());
+        let query_set_copy = QuerySet::<f64>::read_from(&group).unwrap();
         assert_eq!(&query_set, &query_set_copy);
     }
 
@@ -202,13 +203,13 @@ mod tests {
         let hdf5 = File::create(path).unwrap();
 
         let mut group = hdf5.group("/").unwrap();
-        assert!(query_set.serialize(&mut group).is_ok());
-        let query_set_copy = QuerySet::<f64>::deserialize(&group).unwrap();
+        assert!(query_set.add_to(&mut group).is_ok());
+        let query_set_copy = QuerySet::<f64>::read_from(&group).unwrap();
         assert_eq!(&query_set, &query_set_copy);
 
         let mut group = group.create_group("nested").unwrap();
-        assert!(query_set.serialize(&mut group).is_ok());
-        let query_set_copy = QuerySet::<f64>::deserialize(&group).unwrap();
+        assert!(query_set.add_to(&mut group).is_ok());
+        let query_set_copy = QuerySet::<f64>::read_from(&group).unwrap();
         assert_eq!(&query_set, &query_set_copy);
     }
 }

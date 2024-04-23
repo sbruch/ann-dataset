@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
@@ -7,7 +8,7 @@ pub mod point_set;
 pub mod query_set;
 
 /// Collection of metrics and distance functions that characterize an ANN search.
-#[derive(Eq, PartialEq, Hash, Debug, Clone)]
+#[derive(Eq, PartialEq, Hash, Debug, Clone, Serialize, Deserialize)]
 pub enum Metric {
     Hamming,
     Euclidean,

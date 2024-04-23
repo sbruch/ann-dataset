@@ -20,12 +20,13 @@ name = "ann_dataset"
 crate-type = ["lib"]
 
 [dependencies]
-ndarray = { version = "0.15.6", features = ["serde", "rayon"] }
+ndarray = { version = "0.15.6", features = ["serde", "rayon"]}
 ndarray-rand = "0.14.0"
 linfa-linalg = "0.1.0"
-sprs = { version = "0.11.1", features = ["serde"] }
+sprs = { version = "0.11.1", features = ["serde"]}
 hdf5 = "0.8.1"
 anyhow = "1.0.82"
 tempdir = "0.3.7"
 roaring = "0.10.3"
 approx_eq = "0.1.8"
+serde = { version = "1.0.198", features = ["derive"] }

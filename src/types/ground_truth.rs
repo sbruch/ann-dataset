@@ -3,11 +3,12 @@ use anyhow::{anyhow, Result};
 use hdf5::Group;
 use ndarray::{Array2, ArrayView2};
 use roaring::RoaringBitmap;
+use serde::{Deserialize, Serialize};
 use std::cmp::min;
 use std::fmt::{Display, Formatter};
 
 /// Defines the exact nearest neighbors.
-#[derive(Eq, PartialEq, Default, Debug, Clone)]
+#[derive(Eq, PartialEq, Default, Debug, Clone, Serialize, Deserialize)]
 pub struct GroundTruth(Array2<usize>);
 
 impl GroundTruth {
@@ -57,7 +58,7 @@ impl GroundTruth {
 impl Hdf5Serialization for GroundTruth {
     type Object = GroundTruth;
 
-    fn serialize(&self, group: &mut Group) -> Result<()> {
+    fn add_to(&self, group: &mut Group) -> Result<()> {
         let dataset = group
             .new_dataset::<usize>()
             .shape(self.0.shape())
@@ -66,7 +67,7 @@ impl Hdf5Serialization for GroundTruth {
         Ok(())
     }
 
-    fn deserialize(group: &Group) -> Result<Self::Object> {
+    fn read_from(group: &Group) -> Result<Self::Object> {
         let dataset = group.dataset(Self::label().as_str())?;
 
         let vectors = dataset.read_raw::<usize>()?;
@@ -123,16 +124,16 @@ mod tests {
         let hdf5 = File::create(path).unwrap();
 
         let mut group = hdf5.group("/").unwrap();
-        assert!(gt.serialize(&mut group).is_ok());
+        assert!(gt.add_to(&mut group).is_ok());
 
-        let gt_copy = GroundTruth::deserialize(&group).unwrap();
+        let gt_copy = GroundTruth::read_from(&group).unwrap();
         assert_eq!(&gt, &gt_copy);
 
         let group = hdf5.group("/").unwrap();
         let mut group = group.create_group("nested").unwrap();
-        assert!(gt.serialize(&mut group).is_ok());
+        assert!(gt.add_to(&mut group).is_ok());
 
-        let gt_copy = GroundTruth::deserialize(&group).unwrap();
+        let gt_copy = GroundTruth::read_from(&group).unwrap();
         assert_eq!(&gt, &gt_copy);
     }
 }
