@@ -4,10 +4,10 @@ pub trait Hdf5Serialization {
     type Object;
 
     /// Adds `Object` to the given HDF5 `group`.
-    fn serialize(&self, group: &mut Group) -> anyhow::Result<()>;
+    fn add_to(&self, group: &mut Group) -> anyhow::Result<()>;
 
     /// Deserializes `group` into the `Object`.
-    fn deserialize(group: &Group) -> anyhow::Result<Self::Object>;
+    fn read_from(group: &Group) -> anyhow::Result<Self::Object>;
 
     /// Returns the label of `Object` in the HDF5 file.
     fn label() -> String;

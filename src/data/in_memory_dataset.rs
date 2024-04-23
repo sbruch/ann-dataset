@@ -3,6 +3,7 @@ use crate::io::Hdf5File;
 use crate::{Hdf5Serialization, PointSet, QuerySet};
 use anyhow::{anyhow, Result};
 use hdf5::{File, Group, H5Type};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
@@ -10,7 +11,7 @@ use std::fmt::Formatter;
 const QUERY_SETS: &str = "query_sets";
 
 /// An ANN dataset.
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct InMemoryAnnDataset<DataType: Clone> {
     data_points: PointSet<DataType>,
     query_sets: HashMap<String, QuerySet<DataType>>,
@@ -92,27 +93,27 @@ impl<DataType: Clone> AnnDataset<DataType> for InMemoryAnnDataset<DataType> {
 impl<DataType: Clone + H5Type> Hdf5Serialization for InMemoryAnnDataset<DataType> {
     type Object = InMemoryAnnDataset<DataType>;
 
-    fn serialize(&self, group: &mut Group) -> Result<()> {
-        self.data_points.serialize(group)?;
+    fn add_to(&self, group: &mut Group) -> Result<()> {
+        self.data_points.add_to(group)?;
 
         let query_group = group.create_group(QUERY_SETS)?;
         self.query_sets.iter().try_for_each(|entry| {
             let mut grp = query_group.create_group(entry.0)?;
-            entry.1.serialize(&mut grp)?;
+            entry.1.add_to(&mut grp)?;
             anyhow::Ok(())
         })?;
         Ok(())
     }
 
-    fn deserialize(group: &Group) -> Result<Self::Object> {
-        let data_points = PointSet::<DataType>::deserialize(group)?;
+    fn read_from(group: &Group) -> Result<Self::Object> {
+        let data_points = PointSet::<DataType>::read_from(group)?;
 
         let mut query_sets: HashMap<String, QuerySet<DataType>> = HashMap::new();
         let query_group = group.group(QUERY_SETS)?;
         query_group.groups()?.iter().try_for_each(|grp| {
             let name = grp.name();
             let name = name.split('/').last().unwrap();
-            let query_set = QuerySet::<DataType>::deserialize(grp)?;
+            let query_set = QuerySet::<DataType>::read_from(grp)?;
             query_sets.insert(name.to_string(), query_set);
             anyhow::Ok(())
         })?;
@@ -134,7 +135,7 @@ impl<DataType: Clone + H5Type> Hdf5File for InMemoryAnnDataset<DataType> {
     fn write(&self, path: &str) -> Result<()> {
         let file = File::create(path)?;
         let mut root = file.group("/")?;
-        Hdf5Serialization::serialize(self, &mut root)?;
+        Hdf5Serialization::add_to(self, &mut root)?;
         file.close()?;
         Ok(())
     }
@@ -142,7 +143,7 @@ impl<DataType: Clone + H5Type> Hdf5File for InMemoryAnnDataset<DataType> {
     fn read(path: &str) -> Result<Self::Object> {
         let hdf5_dataset = File::open(path)?;
         let root = hdf5_dataset.group("/")?;
-        <InMemoryAnnDataset<DataType> as Hdf5Serialization>::deserialize(&root)
+        <InMemoryAnnDataset<DataType> as Hdf5Serialization>::read_from(&root)
     }
 }
 
