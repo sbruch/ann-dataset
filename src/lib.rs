@@ -38,7 +38,9 @@ mod data;
 mod io;
 mod types;
 
-pub use crate::data::in_memory_dataset::InMemoryAnnDataset;
+pub use crate::data::in_memory_dataset::{
+    InMemoryAnnDataset, PointSetIterator, PointSetMutableIterator,
+};
 pub use crate::data::AnnDataset;
 
 pub use crate::types::ground_truth::GroundTruth;
