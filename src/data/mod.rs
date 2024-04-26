@@ -28,7 +28,7 @@ pub trait AnnDataset<DataType: Clone> {
     fn get_data_points(&self) -> &PointSet<DataType>;
 
     /// Returns a mutable view of all data points.
-    #[deprecated(since = "0.1.3", note = "Please use `` instead.")]
+    #[deprecated(since = "0.1.3", note = "Please use `iter_mut()` instead.")]
     fn get_data_points_mut(&mut self) -> &mut PointSet<DataType>;
 
     /// Selects a subset of data points.
