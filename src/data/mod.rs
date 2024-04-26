@@ -22,17 +22,20 @@ pub trait AnnDataset<DataType: Clone + Sync + Send + 'static> {
     fn iter(&self) -> Self::DataPointIterator<'_>;
 
     /// Provides a mutable `Iterator` over chunks of data points as `PointSet` objects.
+    ///
+    /// It is important to note that, this only provides a mutable view of objects in memory.
+    /// In other words, any modifications to the underlying object persist so long as the object
+    /// resides in memory. The moment an object is evicted from memory, any and all
+    /// modifications to it would be discarded.
     fn iter_mut(&mut self) -> Self::DataPointMutableIterator<'_>;
 
     /// Returns the total number of data points in the dataset.
     fn num_data_points(&self) -> usize;
 
     /// Returns all data points.
-    #[deprecated(since = "0.1.3", note = "Please use `iter()` instead.")]
     fn get_data_points(&self) -> &PointSet<DataType>;
 
     /// Returns a mutable view of all data points.
-    #[deprecated(since = "0.1.3", note = "Please use `iter_mut()` instead.")]
     fn get_data_points_mut(&mut self) -> &mut PointSet<DataType>;
 
     /// Selects a subset of data points.
@@ -56,7 +59,8 @@ pub trait AnnDataset<DataType: Clone + Sync + Send + 'static> {
         self.num_query_points(TEST_QUERY_SET)
     }
 
-    /// Consumes a set of `QuerySet` objects to build a unified query set labeled as `label`.
+    /// Consumes a set of `QuerySet` objects to build a unified query set labeled as `label`,
+    /// and adds it to the dataset.
     ///
     /// If a set with label `label` already exists, this method discards the existing set
     /// and replaces it with the new set.
