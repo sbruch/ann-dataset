@@ -47,7 +47,61 @@ impl<DataType: Clone> InMemoryAnnDataset<DataType> {
     }
 }
 
+pub struct PointSetIterator<'a, DataType: Clone> {
+    point_set: &'a PointSet<DataType>,
+    consumed: bool,
+}
+
+impl<'a, DataType: Clone> Iterator for PointSetIterator<'a, DataType> {
+    type Item = &'a PointSet<DataType>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.consumed {
+            return None;
+        }
+        self.consumed = true;
+        Some(self.point_set)
+    }
+}
+
+pub struct PointSetMutableIterator<'a, DataType: Clone> {
+    point_set: &'a mut PointSet<DataType>,
+    consumed: bool,
+}
+
+impl<'a, DataType: Clone> Iterator for PointSetMutableIterator<'a, DataType> {
+    type Item = &'a mut PointSet<DataType>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.consumed {
+            return None;
+        }
+        self.consumed = true;
+        unsafe {
+            let ptr: *mut PointSet<DataType> = self.point_set;
+            Some(&mut *ptr)
+        }
+    }
+}
+
 impl<DataType: Clone> AnnDataset<DataType> for InMemoryAnnDataset<DataType> {
+    type DataPointIterator<'a> = PointSetIterator<'a, DataType> where DataType: 'a;
+    type DataPointMutableIterator<'a> = PointSetMutableIterator<'a, DataType> where DataType: 'a;
+
+    fn iter(&self) -> Self::DataPointIterator<'_> {
+        PointSetIterator {
+            point_set: &self.data_points,
+            consumed: false,
+        }
+    }
+
+    fn iter_mut<'a>(&'a mut self) -> Self::DataPointMutableIterator<'_> {
+        PointSetMutableIterator::<'a> {
+            point_set: &mut self.data_points,
+            consumed: false,
+        }
+    }
+
     fn get_data_points(&self) -> &PointSet<DataType> {
         &self.data_points
     }
@@ -186,11 +240,41 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_create() {
         let data_points = sample_data_points();
         let dataset = InMemoryAnnDataset::<f32>::create(data_points.clone());
         let copy = dataset.get_data_points();
         assert_eq!(&data_points, copy);
+    }
+
+    #[test]
+    fn test_iter() {
+        let data_points = sample_data_points();
+        let dataset = InMemoryAnnDataset::<f32>::create(data_points.clone());
+        assert_eq!(1_usize, dataset.iter().count());
+
+        for point_set in dataset.iter() {
+            assert_eq!(&data_points, point_set);
+        }
+    }
+
+    #[test]
+    fn test_iter_mut() {
+        let data_points = sample_data_points();
+        let mut dataset = InMemoryAnnDataset::<f32>::create(data_points.clone());
+        assert_eq!(1_usize, dataset.iter_mut().count());
+
+        for point_set in dataset.iter_mut() {
+            assert_eq!(&data_points, point_set);
+            point_set.l2_normalize_inplace();
+        }
+
+        let mut data_points = data_points.clone();
+        data_points.l2_normalize_inplace();
+        for point_set in dataset.iter() {
+            assert_eq!(&data_points, point_set);
+        }
     }
 
     #[test]
@@ -235,7 +319,7 @@ mod tests {
         assert!(dataset.is_ok());
         let dataset = dataset.unwrap();
 
-        assert_eq!(&data_points, dataset.get_data_points());
+        assert_eq!(&data_points, dataset.iter().next().unwrap());
         assert_eq!(
             &query_points,
             dataset.get_train_query_set().unwrap().get_points()

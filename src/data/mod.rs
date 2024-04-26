@@ -7,10 +7,28 @@ const VALIDATION_QUERY_SET: &str = "validation_query_set";
 const TEST_QUERY_SET: &str = "test_query_set";
 
 pub trait AnnDataset<DataType: Clone> {
+    type DataPointIterator<'a>: Iterator
+    where
+        DataType: 'a,
+        Self: 'a;
+
+    type DataPointMutableIterator<'a>: Iterator
+    where
+        DataType: 'a,
+        Self: 'a;
+
+    /// Provides an `Iterator` over chunks of data points as `PointSet` objects.
+    fn iter(&self) -> Self::DataPointIterator<'_>;
+
+    /// Provides a mutable `Iterator` over chunks of data points as `PointSet` objects.
+    fn iter_mut(&mut self) -> Self::DataPointMutableIterator<'_>;
+
     /// Returns all data points.
+    #[deprecated(since = "0.1.3", note = "Please use `iter()` instead.")]
     fn get_data_points(&self) -> &PointSet<DataType>;
 
     /// Returns a mutable view of all data points.
+    #[deprecated(since = "0.1.3", note = "Please use `` instead.")]
     fn get_data_points_mut(&mut self) -> &mut PointSet<DataType>;
 
     /// Selects a subset of data points.
