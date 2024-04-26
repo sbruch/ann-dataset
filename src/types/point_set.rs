@@ -141,6 +141,72 @@ impl<DataType: Clone> PointSet<DataType> {
 
         PointSet { dense, sparse }
     }
+
+    /// Assesses whether `other` can be successfully appended to this object.
+    pub(crate) fn is_appendable(&self, other: &PointSet<DataType>) -> Result<()> {
+        if self.dense.is_some() != other.dense.is_some()
+            || self.sparse.is_some() != other.sparse.is_some()
+        {
+            return Err(anyhow!(
+                "Dense (or sparse) set is present in one set but not in the other."
+            ));
+        }
+
+        if let Some(set) = self.dense.as_ref() {
+            if set.ncols() != other.dense.as_ref().unwrap().ncols() {
+                return Err(anyhow!(
+                    "Dense subsets have different number of dimensions."
+                ));
+            }
+        }
+
+        if let Some(set) = self.sparse.as_ref() {
+            if set.cols() != other.sparse.as_ref().unwrap().cols() {
+                return Err(anyhow!(
+                    "Sparse subsets have different number of dimensions."
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Appends the records from `other` to this object.
+    pub(crate) fn append(&mut self, other: &PointSet<DataType>) -> Result<()> {
+        self.is_appendable(other)?;
+
+        if let Some(set) = self.dense.as_mut() {
+            set.append(Axis(0), other.dense.as_ref().unwrap().view())?;
+        }
+        self.sparse = if let Some(set) = self.sparse.as_mut() {
+            if set.cols() != other.sparse.as_ref().unwrap().cols() {
+                return Err(anyhow!(
+                    "Sparse subsets have different number of dimensions."
+                ));
+            }
+
+            let (mut indptr, mut indices, mut values) = set.clone().into_raw_storage();
+
+            let base = *indptr.last().unwrap();
+            other.sparse.as_ref().unwrap().indptr().into_raw_storage()[1..]
+                .iter()
+                .for_each(|&x| {
+                    indptr.push(base + x);
+                });
+
+            indices.append(&mut other.sparse.as_ref().unwrap().indices().to_owned());
+            values.append(&mut other.sparse.as_ref().unwrap().data().to_owned());
+
+            let nrows = set.rows() + other.sparse.as_ref().unwrap().rows();
+            let ncols = set.cols();
+
+            Some(CsMat::new((nrows, ncols), indptr, indices, values))
+        } else {
+            None
+        };
+
+        Ok(())
+    }
 }
 
 impl PointSet<f32> {
@@ -320,6 +386,40 @@ mod tests {
 
         let dense = Array2::<f32>::eye(4);
         assert!(PointSet::new(Some(dense.clone()), Some(sparse.clone())).is_ok());
+    }
+
+    #[test]
+    fn test_append() {
+        let dense = Array2::<f32>::eye(4);
+
+        let mut sparse = TriMat::new((4, 4));
+        sparse.add_triplet(0, 0, 3.0_f32);
+        sparse.add_triplet(1, 2, 2.0);
+        sparse.add_triplet(3, 0, -2.0);
+        let sparse: CsMat<_> = sparse.to_csr();
+
+        let mut point_set = PointSet::new(Some(dense.clone()), Some(sparse.clone())).unwrap();
+
+        let other = PointSet::new(Some(dense.clone()), None).unwrap();
+        assert!(point_set.is_appendable(&other).is_err());
+        assert!(point_set.append(&other).is_err());
+
+        let other = PointSet::new(None, Some(sparse.clone())).unwrap();
+        assert!(point_set.is_appendable(&other).is_err());
+        assert!(point_set.append(&other).is_err());
+
+        let other = PointSet::new(Some(Array2::<f32>::ones((4, 5))), Some(sparse.clone())).unwrap();
+        assert!(point_set.is_appendable(&other).is_err());
+
+        let other = PointSet::new(Some(Array2::<f32>::eye(4)), Some(sparse.clone())).unwrap();
+        assert!(point_set.is_appendable(&other).is_ok());
+        assert!(point_set.append(&other).is_ok());
+
+        let mut result = Array2::<f32>::eye(4);
+        result
+            .append(Axis(0), Array2::<f32>::eye(4).view())
+            .unwrap();
+        assert_eq!(result, point_set.dense.as_ref().unwrap());
     }
 
     #[test]

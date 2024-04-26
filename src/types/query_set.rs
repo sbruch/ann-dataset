@@ -63,6 +63,45 @@ impl<DataType: Clone> QuerySet<DataType> {
             metric
         ))
     }
+
+    pub(crate) fn is_appendable(&self, other: &QuerySet<DataType>) -> Result<()> {
+        self.neighbors.keys().try_for_each(|metric| {
+            if !other.neighbors.contains_key(metric) {
+                return Err(anyhow!(
+                    "The other set does not have ground truth for metric {}.",
+                    metric
+                ));
+            }
+            Ok(())
+        })?;
+
+        other.neighbors.keys().try_for_each(|metric| {
+            if !self.neighbors.contains_key(metric) {
+                return Err(anyhow!(
+                    "The other set has extra ground truth for metric {}.",
+                    metric
+                ));
+            }
+            Ok(())
+        })?;
+
+        self.points.is_appendable(&other.points)?;
+        self.neighbors
+            .iter()
+            .try_for_each(|(metric, gt)| gt.is_appendable(other.neighbors.get(metric).unwrap()))?;
+
+        Ok(())
+    }
+
+    pub(crate) fn append(&mut self, other: &QuerySet<DataType>) -> Result<()> {
+        self.is_appendable(other)?;
+        self.points.append(&other.points)?;
+        self.neighbors
+            .iter_mut()
+            .try_for_each(|(metric, gt)| gt.append(other.neighbors.get(metric).unwrap()))?;
+
+        Ok(())
+    }
 }
 
 impl<DataType: Clone + H5Type> Hdf5Serialization for QuerySet<DataType> {
@@ -160,6 +199,33 @@ mod tests {
                 .get_neighbors(),
             Array2::<usize>::zeros((5, 1))
         );
+    }
+
+    #[test]
+    fn test_append() {
+        let dense = Array2::<f64>::eye(5);
+        let queries = PointSet::<f64>::new(Some(dense), None).unwrap();
+
+        let mut query_set = QuerySet::new(queries.clone());
+        assert!(query_set
+            .add_ground_truth(InnerProduct, Array2::<usize>::zeros((5, 1)))
+            .is_ok());
+        assert!(query_set
+            .add_ground_truth(Euclidean, Array2::<usize>::ones((5, 1)))
+            .is_ok());
+
+        let mut other = QuerySet::new(queries.clone());
+        assert!(query_set.is_appendable(&other).is_err());
+
+        assert!(other
+            .add_ground_truth(InnerProduct, Array2::<usize>::zeros((5, 1)))
+            .is_ok());
+        assert!(query_set.is_appendable(&other).is_err());
+
+        assert!(other
+            .add_ground_truth(Euclidean, Array2::<usize>::ones((5, 1)))
+            .is_ok());
+        assert!(query_set.is_appendable(&other).is_ok());
     }
 
     #[test]

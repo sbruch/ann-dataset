@@ -1,7 +1,7 @@
 use crate::Hdf5Serialization;
 use anyhow::{anyhow, Result};
 use hdf5::Group;
-use ndarray::{Array2, ArrayView2};
+use ndarray::{Array2, ArrayView2, Axis};
 use roaring::RoaringBitmap;
 use serde::{Deserialize, Serialize};
 use std::cmp::min;
@@ -52,6 +52,23 @@ impl GroundTruth {
             })
             .sum::<f64>();
         Ok(recall as f32 / retrieved_set.len() as f32)
+    }
+
+    /// Assesses whether `other` can be successfully appended to this object.
+    pub(crate) fn is_appendable(&self, other: &GroundTruth) -> Result<()> {
+        if self.0.ncols() != other.0.ncols() {
+            return Err(anyhow!(
+                "Number of exact nearest neighbors in ground truth sets do not match."
+            ));
+        }
+        Ok(())
+    }
+
+    /// Appends the records from `other` to this object.
+    pub(crate) fn append(&mut self, other: &GroundTruth) -> Result<()> {
+        self.is_appendable(other)?;
+        self.0.append(Axis(0), other.0.view())?;
+        Ok(())
     }
 }
 
@@ -110,6 +127,32 @@ mod tests {
 
         let recall = gt.mean_recall(&[vec![1_usize, 2], vec![5, 6], vec![1, 8]]);
         assert_approx_eq!(recall.unwrap().into(), 0.666, 0.01);
+    }
+
+    #[test]
+    fn test_append() {
+        let mut gt = GroundTruth::new(
+            Array2::from_shape_vec((3, 3), vec![1_usize, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap(),
+        );
+
+        let other = GroundTruth::new(
+            Array2::from_shape_vec((2, 4), vec![3_usize, 4, 5, 6, 7, 8, 9, 10]).unwrap(),
+        );
+        assert!(gt.is_appendable(&other).is_err());
+        assert!(gt.append(&other).is_err());
+
+        let other =
+            GroundTruth::new(Array2::from_shape_vec((2, 3), vec![3_usize, 4, 5, 6, 7, 8]).unwrap());
+        assert!(gt.is_appendable(&other).is_ok());
+        assert!(gt.append(&other).is_ok());
+        assert_eq!(
+            Array2::from_shape_vec(
+                (5, 3),
+                vec![1_usize, 2, 3, 4, 5, 6, 7, 8, 9, 3, 4, 5, 6, 7, 8]
+            )
+            .unwrap(),
+            gt.0
+        );
     }
 
     #[test]

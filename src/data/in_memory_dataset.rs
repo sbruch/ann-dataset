@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
+use std::sync::mpsc::Receiver;
 
 const QUERY_SETS: &str = "query_sets";
 
@@ -84,7 +85,9 @@ impl<'a, DataType: Clone> Iterator for PointSetMutableIterator<'a, DataType> {
     }
 }
 
-impl<DataType: Clone> AnnDataset<DataType> for InMemoryAnnDataset<DataType> {
+impl<DataType: Clone + Sync + Send + 'static> AnnDataset<DataType>
+    for InMemoryAnnDataset<DataType>
+{
     type DataPointIterator<'a> = PointSetIterator<'a, DataType> where DataType: 'a;
     type DataPointMutableIterator<'a> = PointSetMutableIterator<'a, DataType> where DataType: 'a;
 
@@ -102,6 +105,10 @@ impl<DataType: Clone> AnnDataset<DataType> for InMemoryAnnDataset<DataType> {
         }
     }
 
+    fn num_data_points(&self) -> usize {
+        self.data_points.num_points()
+    }
+
     fn get_data_points(&self) -> &PointSet<DataType> {
         &self.data_points
     }
@@ -114,11 +121,21 @@ impl<DataType: Clone> AnnDataset<DataType> for InMemoryAnnDataset<DataType> {
         self.data_points.select(ids)
     }
 
-    /// Adds a new query set to the dataset with the given `label` or replaces one if it already
-    /// exists.
+    fn num_query_points(&self, label: &str) -> Result<usize> {
+        match self.query_sets.get(label) {
+            None => Err(anyhow!("Query set {} does not exist", label)),
+            Some(set) => Ok(set.get_points().num_points()),
+        }
+    }
+
+    /// Consumes a set of `QuerySet` objects to build a unified query set labeled as `label`.
+    ///
+    /// If a set with label `label` already exists, this method discards the existing set
+    /// and replaces it with the new set.
     ///
     /// Consider the following example:
     /// ```rust
+    /// use std::sync::mpsc::channel;
     /// use ndarray::Array2;
     /// use ann_dataset::{AnnDataset, InMemoryAnnDataset, PointSet, QuerySet};
     ///
@@ -130,10 +147,30 @@ impl<DataType: Clone> AnnDataset<DataType> for InMemoryAnnDataset<DataType> {
     /// let mut dataset = InMemoryAnnDataset::create(data_points);
     ///
     /// let query_set = QuerySet::new(query_points);
-    /// dataset.add_query_set("train", query_set);
+    /// let (tx, rx) = channel::<QuerySet<f32>>();
+    ///  tx.send(query_set).expect("Failed to send query set to channel.");
+    ///  drop(tx);
+    ///  dataset.add_query_sets("train", rx)
+    ///     .expect("Failed to add query set to the dataset.");
     /// ```
-    fn add_query_set(&mut self, label: &str, query_set: QuerySet<DataType>) {
-        self.query_sets.insert(label.to_string(), query_set);
+    fn add_query_sets(
+        &mut self,
+        label: &str,
+        query_sets: Receiver<QuerySet<DataType>>,
+    ) -> Result<()> {
+        if self.query_sets.contains_key(label) {
+            self.query_sets.remove(label);
+        }
+
+        for query_set in query_sets {
+            if let Some(set) = self.query_sets.get_mut(label) {
+                set.is_appendable(&query_set)?;
+                set.append(&query_set)?;
+            } else {
+                self.query_sets.insert(label.to_string(), query_set);
+            }
+        }
+        Ok(())
     }
 
     fn get_query_set(&self, label: &str) -> Result<&QuerySet<DataType>> {
@@ -246,6 +283,9 @@ mod tests {
         let dataset = InMemoryAnnDataset::<f32>::create(data_points.clone());
         let copy = dataset.get_data_points();
         assert_eq!(&data_points, copy);
+
+        assert_eq!(4, dataset.num_data_points());
+        assert!(dataset.num_query_points("nonexistent").is_err());
     }
 
     #[test]
@@ -287,14 +327,19 @@ mod tests {
         assert!(dataset.get_test_query_set().is_err());
 
         let query_points = sample_data_points();
-        dataset.add_train_query_set(QuerySet::new(query_points.clone()));
+        assert!(dataset
+            .add_train_query_set(QuerySet::new(query_points.clone()))
+            .is_ok());
         assert!(dataset.get_train_query_set().is_ok());
+        assert_eq!(4, dataset.num_train_query_points().unwrap());
         let copy = dataset.get_train_query_set().unwrap();
         assert_eq!(&query_points, copy.get_points());
 
         // Replace an existing query set.
         let query_points = sample_data_points();
-        dataset.add_train_query_set(QuerySet::new(query_points.clone()));
+        assert!(dataset
+            .add_train_query_set(QuerySet::new(query_points.clone()))
+            .is_ok());
         assert!(dataset.get_train_query_set().is_ok());
         let copy = dataset.get_train_query_set().unwrap();
         assert_eq!(&query_points, copy.get_points());
@@ -305,7 +350,9 @@ mod tests {
         let data_points = sample_data_points();
         let mut dataset = InMemoryAnnDataset::<f32>::create(data_points.clone());
         let query_points = sample_data_points();
-        dataset.add_train_query_set(QuerySet::new(query_points.clone()));
+        assert!(dataset
+            .add_train_query_set(QuerySet::new(query_points.clone()))
+            .is_ok());
 
         let dir = TempDir::new("test_write").unwrap();
         let path = dir.path().join("ann-dataset.hdf5");
