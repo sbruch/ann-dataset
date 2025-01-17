@@ -21,11 +21,20 @@ impl GroundTruth {
         self.0.view()
     }
 
-    /// Computes recall given a retrieved set.
+    /// Computes mean recall given a retrieved set.
     ///
     /// Returns an error if the number of queries does not match between `retrieved_set`
     /// and the exact neighbor set stored in this object.
     pub fn mean_recall(&self, retrieved_set: &[Vec<usize>]) -> Result<f32> {
+        let recall = self.recall(retrieved_set)?;
+        Ok(recall.iter().sum::<f32>() / retrieved_set.len() as f32)
+    }
+
+    /// Computes recall given a retrieved set.
+    ///
+    /// Returns an error if the number of queries does not match between `retrieved_set`
+    /// and the exact neighbor set stored in this object.
+    pub fn recall(&self, retrieved_set: &[Vec<usize>]) -> Result<Vec<f32>> {
         if retrieved_set.len() != self.0.nrows() {
             return Err(anyhow!(
                 "Retrieved set has {} queries, but expected {} queries",
@@ -35,11 +44,11 @@ impl GroundTruth {
         }
 
         if retrieved_set.is_empty() {
-            return Ok(1_f32);
+            return Ok(vec![1_f32; self.0.nrows()]);
         }
         let k = min(retrieved_set[0].len(), self.0.ncols());
 
-        let recall = retrieved_set
+        Ok(retrieved_set
             .iter()
             .enumerate()
             .map(|(i, set)| {
@@ -47,11 +56,10 @@ impl GroundTruth {
                     RoaringBitmap::from_iter(self.0.row(i).iter().map(|x| *x as u32).take(k))
                         .intersection_len(&RoaringBitmap::from_iter(
                             set.iter().map(|x| *x as u32).take(k),
-                        )) as f64;
-                intersection_len / k as f64
+                        )) as f32;
+                intersection_len / k as f32
             })
-            .sum::<f64>();
-        Ok(recall as f32 / retrieved_set.len() as f32)
+            .collect::<Vec<_>>())
     }
 }
 
@@ -91,6 +99,7 @@ impl Display for GroundTruth {
 
 #[cfg(test)]
 mod tests {
+    use std::iter::zip;
     use crate::types::ground_truth::GroundTruth;
     use crate::Hdf5Serialization;
     use approx_eq::assert_approx_eq;
@@ -103,10 +112,18 @@ mod tests {
         let gt = GroundTruth::new(
             Array2::from_shape_vec((3, 3), vec![1_usize, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap(),
         );
+        assert!(gt.recall(&[]).is_err());
         assert!(gt.mean_recall(&[]).is_err());
 
-        let recall = gt.mean_recall(&[vec![1_usize], vec![5], vec![1]]);
-        assert_approx_eq!(recall.unwrap().into(), 0.333, 0.01);
+        let recall = gt.recall(&[vec![1_usize], vec![5], vec![1]]);
+        let mean_recall = gt.mean_recall(&[vec![1_usize], vec![5], vec![1]]);
+        assert_approx_eq!(mean_recall.unwrap().into(), 0.333, 0.01);
+        zip(
+            vec![1.0, 0., 0.],
+            recall.unwrap(),
+        ).for_each(|e| {
+            assert_approx_eq!(e.0, e.1 as f64, 0.01);
+        });
 
         let recall = gt.mean_recall(&[vec![1_usize, 2], vec![5, 6], vec![1, 8]]);
         assert_approx_eq!(recall.unwrap().into(), 0.666, 0.01);
